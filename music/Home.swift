@@ -12,6 +12,8 @@ struct Home: View {
     @State private var expandSheet = false
     @Namespace private var animation
     
+    @EnvironmentObject var songManager: SongManager
+    
     var body: some View {
         ScrollView {
             header
@@ -19,6 +21,8 @@ struct Home: View {
             TagsView()
             
             QuickPlay()
+            
+            LargeCards()
         }
         .edgesIgnoringSafeArea(.top)
     }
@@ -64,6 +68,7 @@ struct Home: View {
                         .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.15)))
                 }
             }
+            .padding()
         }
     }
     
@@ -105,10 +110,54 @@ struct Home: View {
                             
                             Spacer()
                         })
+                        .onTapGesture {
+                            songManager.playSong(song: item)
+                        }
                     }
                 })
                  .padding(.horizontal)
              }
+        }
+    }
+    
+    // Large Cards View -> New Releases
+    @ViewBuilder func LargeCards() -> some View {
+        VStack {
+            HStack {
+                Text("New Releases")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .padding()
+                
+                Spacer()
+            }
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 15, content: {
+                    ForEach(sampleSongs, id: \.id) { item in
+                        VStack(alignment: .leading, content: {
+                            AsyncImage(url: URL(string: item.cover)) { img in
+                                img.resizable()
+                                    .scaledToFill()
+                            } placeholder: {
+                                ProgressView()
+                            }
+                            .frame(width: 160, height: 160)
+                            .clipShape(.rect(cornerRadius: 20))
+                            
+                            Text("\(item.title)")
+                                .font(.headline)
+                            
+                            Text("\(item.artist)")
+                                .font(.caption)
+                        })
+                        .onTapGesture {
+                            songManager.playSong(song: item)
+                        }
+                    }
+                })
+                .padding(.horizontal)
+            }
         }
     }
     

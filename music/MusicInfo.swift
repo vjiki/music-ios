@@ -12,15 +12,23 @@ struct MusicInfo: View {
     @Binding var expandSheet: Bool
     var animation: Namespace.ID
     
+    @EnvironmentObject var songManager: SongManager
+    
     var body: some View {
         HStack(spacing: 0) {
             ZStack {
                 if !expandSheet {
                     GeometryReader {
                         let size = $0.size
-                        Image("music 1")
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
+
+                        AsyncImage(url: URL(string: songManager.song.cover)) { img in
+                            img.resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            ProgressView()
+                                .background(.white.opacity(0.1))
+                                .clipShape(.rect(cornerRadius: 5))
+                        }
                             .frame(width: size.width, height: size.height)
                             .clipShape(.rect(cornerRadius: 60, style: .continuous))
                         
@@ -33,7 +41,7 @@ struct MusicInfo: View {
             }
             .frame(width: 55, height: 55)
             
-            Text("Song Title")
+            Text("\(songManager.song.title))")
                 .fontWeight(.semibold)
                 .lineLimit(1)
                 .padding(.horizontal, 15)

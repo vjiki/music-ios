@@ -15,6 +15,8 @@ struct MusicView: View {
     @State private var animateContent: Bool = false
     @State private var offsetY: CGFloat = 0
     
+    @EnvironmentObject var songManager: SongManager
+    
     var body: some View {
         GeometryReader {
             let size = $0.size
@@ -69,9 +71,14 @@ struct MusicView: View {
                     
                     GeometryReader {
                         let size = $0.size
-                        Image("music 1")
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
+                        AsyncImage(url: URL(string: songManager.song.cover)) { img in
+                            img.resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            ProgressView()
+                                .background(.white.opacity(0.1))
+                                .clipShape(.rect(cornerRadius: 5))
+                        }
                             .frame(width: size.width, height: size.height)
                             .clipShape(RoundedRectangle(cornerRadius: animateContent ? 30 : 60, style: .continuous))
                     }
@@ -135,11 +142,11 @@ struct MusicView: View {
                 VStack(spacing: spacing, content: {
                     HStack(alignment: .center, spacing: 15, content: {
                         VStack(alignment: .center, spacing: 10, content: {
-                            Text("Song Title")
+                            Text("\(songManager.song.title))")
                                 .font(.title)
                                 .fontWeight(.semibold)
                             
-                            Text("Aritst")
+                            Text("\(songManager.song.artist))")
                                 .font(.title3)
                                 .foregroundStyle(.gray)
                         })
