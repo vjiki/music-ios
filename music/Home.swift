@@ -13,17 +13,117 @@ struct Home: View {
     @Namespace private var animation
     
     var body: some View {
-        header
+        ScrollView {
+            header
+            
+            TagsView()
+            
+            QuickPlay()
+        }
+        .edgesIgnoringSafeArea(.top)
     }
     
     // Header
     var header: some View {
-        HStack {
-            Text("Good morning moods")
+        GeometryReader {
+            size in
+            VStack(alignment: .leading) {
+                HStack {
+                    Text("Good morning moods")
+                        .font(.title2)
+                    
+                    Spacer()
+                    
+                    Image(systemName: "bell")
+                        .imageScale(.large)
+                    
+                    Image("singer 1")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 40, height: 40)
+                        .clipShape(Circle())
+                }
+            }
         }
-        .frame(width: .infinity, height: 60)
+
         .padding(.horizontal)
+        .padding(.top, getSafeAreaTop())
+        .background(LinearGradient(colors: [Color.red, .clear], startPoint: .top, endPoint: .bottom))
+        .frame(width: .infinity, height: getSafeAreaTop() * 2)
     }
+    
+    
+    // Tags View
+    @ViewBuilder func TagsView() -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack {
+                ForEach(sampleTagList, id: \.id) { item in
+                    Text(item.tag)
+                        .padding(.horizontal)
+                        .padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(.white.opacity(0.15)))
+                }
+            }
+        }
+    }
+    
+    
+    // Quick Play Songs
+    @ViewBuilder func QuickPlay() -> some View {
+        VStack {
+            HStack {
+                Text("Quick Play")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                
+                Spacer()
+            }
+            .padding(.horizontal)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHGrid(rows: [GridItem(.fixed(60)), GridItem(.fixed(60)), GridItem(.fixed(60)), GridItem(.fixed(60))], content: {
+                    // How List of Songs
+                    ForEach(sampleSongs, id: \.id) { item in
+                        HStack(spacing: 20, content: {
+                            AsyncImage(url: URL(string: item.cover)) { img in
+                                img.resizable()
+                                    .scaledToFill()
+                            } placeholder: {
+                                ProgressView()
+                                    .background(.white.opacity(0.1))
+                                    .clipShape(.rect(cornerRadius: 5))
+                            }
+                            .frame(width: 60, height: 60)
+                            .clipShape(.rect(cornerRadius: 5))
+
+                            VStack(alignment: .leading) {
+                                Text("\(item.title)")
+                                    .font(.headline)
+                                Text("\(item.artist)")
+                                    .font(.caption)
+                            }
+                            
+                            Spacer()
+                        })
+                    }
+                })
+                 .padding(.horizontal)
+             }
+        }
+    }
+    
+    // Here we create a function to get Size of Top Safe Area
+    func getSafeAreaTop() -> CGFloat {
+        let keyWindow = UIApplication.shared.connectedScenes
+            .filter({ $0.activationState == .foregroundActive })
+            .map({ $0 as? UIWindowScene })
+            .compactMap({$0})
+            .first?.windows
+            .filter({$0.isKeyWindow}).first
+        
+        return (keyWindow?.safeAreaInsets.top)!
+    }
+    
 }
 
 #Preview {
