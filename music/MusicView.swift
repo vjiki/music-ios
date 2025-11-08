@@ -22,10 +22,10 @@ struct MusicView: View {
             
             ZStack(alignment: .top) {
                 RoundedRectangle(cornerRadius: animateContent ? deviceCornerRadius : 0, style: .continuous)
-                    .fill(.ultraThickMaterial)
+                    .fill(.black)
                     .overlay {
                         Rectangle()
-                            .fill(.gray.opacity(0.4))
+                            .fill(.black)
                             .opacity(animateContent ? 1 : 0)
                     }
                     .overlay(alignment: .top) {
@@ -43,7 +43,8 @@ struct MusicView: View {
                         Image(systemName: "chevron.down")
                             .imageScale(.large)
                             .onTapGesture {
-                                expandSheet.toggle()
+                                expandSheet = false
+                                animateContent = false
                             }
                         
                         Spacer()
@@ -75,15 +76,109 @@ struct MusicView: View {
                             .clipShape(RoundedRectangle(cornerRadius: animateContent ? 30 : 60, style: .continuous))
                     }
                     .matchedGeometryEffect(id: "SONGCOVER", in: animation)
-                    .frame(width: size.width)
+                    .frame(width: size.width - 50)
                     .padding(.vertical, size.height < 700 ? 30 : 40)
-                    .padding(.horizontal)
+                    
+                PlayerView(size)
+                        .offset(y: animateContent ? 0 : size.height)
                 }
                 .padding(.top, safeArea.top + (safeArea.bottom == 0 ? 10 : 0))
                 .padding(.bottom, safeArea.bottom == 0 ? 10 : safeArea.bottom)
                 .padding(.horizontal, 25)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.36)) {
+                        expandSheet.toggle()
+                        animateContent.toggle()
+                    }
+                }
             }
+            .contentShape(Rectangle())
+            .offset(y: offsetY)
+            .gesture(
+                DragGesture()
+                    .onChanged( { value in
+                        let translationY = value.translation.height
+                        offsetY = (translationY > 0 ? translationY : 0)
+                        
+                    }).onEnded( { value in
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            if offsetY > size.height * 0.4 {
+                                expandSheet = false
+                                animateContent = false
+                            } else {
+                                offsetY = .zero
+                            }
+                        }
+                    })
+            ).ignoresSafeArea(.container, edges: .all)
+            
+        }
+        .edgesIgnoringSafeArea(.top)
+        .onAppear() {
+            withAnimation(.easeInOut(duration: 0.35)) {
+                animateContent = true
+            }
+        }
+    }
+    
+    @State var value = 11.0
+    
+    @ViewBuilder
+    func PlayerView(_ mainSize: CGSize) -> some View {
+        GeometryReader {
+            let size = $0.size
+            let spacing = size.height * 0.04
+            
+            // sizing t for more compact look
+            VStack(spacing: spacing, content: {
+                VStack(spacing: spacing, content: {
+                    HStack(alignment: .center, spacing: 15, content: {
+                        VStack(alignment: .center, spacing: 10, content: {
+                            Text("Song Title")
+                                .font(.title)
+                                .fontWeight(.semibold)
+                            
+                            Text("Aritst")
+                                .font(.title3)
+                                .foregroundStyle(.gray)
+                        })
+                        .frame(maxWidth: .infinity)
+                        
+                        Slider(value: $value, in: 0...100)
+                        HStack {
+                            Text("0:50")
+                                .font(.caption)
+                            
+                            Spacer()
+                            
+                            Text("3:55")
+                                .font(.caption)
+                        }
+                        
+                        HStack(alignment: .center, spacing: 30, content: {
+                            Image(systemName: "shuffle")
+                                .imageScale(.medium)
+                            
+                            Image(systemName: "backward.end.fill")
+                                .imageScale(.medium)
+                            
+                            Image(systemName: "play.fill")
+                                .imageScale(.large)
+                                .padding()
+                                .background(.white)
+                                .clipShape(Circle())
+                                .foregroundStyle(.black)
+                            
+                            Image(systemName: "forward.end.fill")
+                                .imageScale(.medium)
+                            
+                            Image(systemName: "repeat")
+                                .imageScale(.medium)
+                        })
+                    })
+                })
+            })
         }
     }
 }

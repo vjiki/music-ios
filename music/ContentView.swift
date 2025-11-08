@@ -58,8 +58,8 @@ struct ContentView: View {
                     .overlay {
                         MusicInfo(expandSheet: $expandSheet, animation: animation)
                     }
+                    .clipShape(.rect(topLeadingRadius: 30, topTrailingRadius: 30))
                     .matchedGeometryEffect(id: "BACKGROUNDVIEW", in: animation)
-                
             }
         }
         .frame(height: 80)

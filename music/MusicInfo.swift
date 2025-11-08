@@ -46,6 +46,7 @@ struct MusicInfo: View {
                 Image(systemName: "pause.fill")
                     .font(.title2)
                     .foregroundStyle(.black)
+                    .padding()
                     .background(.white)
                     .clipShape(Circle())
             }
