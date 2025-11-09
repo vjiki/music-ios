@@ -33,7 +33,7 @@ struct MusicView: View {
                     .overlay(alignment: .top) {
                         MusicInfo(expandSheet: $expandSheet, animation: animation)
                             .allowsHitTesting(false)
-                            .opacity(animateContent ? 1 : 0)
+                            .opacity(animateContent ? 0 : 1)
                     }
                     .matchedGeometryEffect(id: "BACKGROUNDVIEW", in: animation)
                 
