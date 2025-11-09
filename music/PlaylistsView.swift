@@ -15,7 +15,7 @@ struct PlaylistsView: View {
     ]
     
     private var playlistCards: [PlaylistCard] {
-        SongManager.PlaylistKind.allCases.map { kind in
+        PlaylistKind.allCases.map { kind in
             let songs = songManager.songs(for: kind)
             return PlaylistCard(
                 kind: kind,
@@ -46,7 +46,7 @@ struct PlaylistsView: View {
             }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle("Playlists")
-            .navigationDestination(for: SongManager.PlaylistKind.self) { kind in
+            .navigationDestination(for: PlaylistKind.self) { kind in
                 PlaylistDetailView(kind: kind)
             }
         }
@@ -65,8 +65,8 @@ struct PlaylistsView: View {
 }
 
 private struct PlaylistCard: Identifiable {
-    var id: SongManager.PlaylistKind { kind }
-    let kind: SongManager.PlaylistKind
+    var id: PlaylistKind { kind }
+    let kind: PlaylistKind
     let title: String
     let subtitle: String
     let icon: String
@@ -119,7 +119,7 @@ private struct PlaylistTile: View {
 
 private struct PlaylistDetailView: View {
     @EnvironmentObject var songManager: SongManager
-    let kind: SongManager.PlaylistKind
+    let kind: PlaylistKind
     
     private var songs: [SongsModel] {
         songManager.songs(for: kind)
@@ -279,7 +279,7 @@ private struct PlaylistSongRow: View {
     }
 }
 
-private extension SongManager.PlaylistKind {
+private extension PlaylistKind {
     var displayTitle: String {
         switch self {
         case .liked:
