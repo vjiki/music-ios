@@ -35,6 +35,11 @@ class SongManager: ObservableObject {
         }
     }
     
+    enum PlaylistKind: String, CaseIterable, Hashable {
+        case liked
+        case disliked
+    }
+    
     @Published private(set) var song: SongsModel = SongsModel(artist: "", audio_url: "", cover: "", title: "")
     @Published private(set) var playlist: [SongsModel] = []
     @Published private(set) var currentIndex: Int?
@@ -43,6 +48,9 @@ class SongManager: ObservableObject {
     @Published var duration: TimeInterval = 0
     @Published private(set) var isShuffling: Bool = false
     @Published private(set) var repeatMode: RepeatMode = .none
+    @Published private(set) var librarySongs: [SongsModel] = sampleSongs
+    @Published private(set) var likedSongIDs: Set<String> = []
+    @Published private(set) var dislikedSongIDs: Set<String> = []
     
     private var player: AVPlayer?
     private var timeObserverToken: Any?
@@ -58,52 +66,28 @@ class SongManager: ObservableObject {
     }
     
     func playSong(_ song: SongsModel, in playlist: [SongsModel]? = nil) {
-        if var providedPlaylist = playlist {
-            if !providedPlaylist.contains(where: { $0.id == song.id }) {
-                providedPlaylist.append(song)
-            }
-            
-            guard let index = providedPlaylist.firstIndex(where: { $0.id == song.id }) else {
-                return
-            }
-            playSong(at: index, playlist: providedPlaylist)
-        } else if let currentIndex = self.playlist.firstIndex(where: { $0.id == song.id }) {
-            playSong(at: currentIndex)
-        } else if !originalPlaylist.isEmpty, let index = originalPlaylist.firstIndex(where: { $0.id == song.id }) {
-            playSong(at: index, playlist: originalPlaylist)
-        } else {
-            playSong(at: 0, playlist: [song])
+        var basePlaylist = playlist ?? originalPlaylist
+        if basePlaylist.isEmpty {
+            basePlaylist = [song]
+        } else if !basePlaylist.contains(where: { $0.id == song.id }) {
+            basePlaylist.append(song)
         }
+        
+        configurePlaylist(with: basePlaylist, selecting: song)
+        startPlaybackAtCurrentIndex()
     }
     
     func playSong(at index: Int, playlist newPlaylist: [SongsModel]? = nil) {
         if let newPlaylist {
             guard newPlaylist.indices.contains(index) else { return }
-            let song = newPlaylist[index]
-            originalPlaylist = newPlaylist
-            
-            if isShuffling {
-                let shuffled = shuffledPlaylist(from: newPlaylist, keeping: song)
-                playlist = shuffled
-                currentIndex = shuffled.firstIndex(where: { $0.id == song.id }) ?? 0
-            } else {
-                playlist = newPlaylist
-                currentIndex = index
-            }
+            let selectedSong = newPlaylist[index]
+            configurePlaylist(with: newPlaylist, selecting: selectedSong)
         } else {
             guard playlist.indices.contains(index) else { return }
             currentIndex = index
         }
         
-        guard let currentIndex,
-              playlist.indices.contains(currentIndex) else { return }
-        
-        let song = playlist[currentIndex]
-        self.song = song
-        currentTime = 0
-        duration = 0
-        
-        preparePlayer(with: song.audio_url)
+        startPlaybackAtCurrentIndex()
     }
     
     func play() {
@@ -200,6 +184,52 @@ class SongManager: ObservableObject {
         repeatMode.iconName
     }
     
+    var likedSongs: [SongsModel] {
+        librarySongs
+            .filter { likedSongIDs.contains($0.id) }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+    
+    var dislikedSongs: [SongsModel] {
+        librarySongs
+            .filter { dislikedSongIDs.contains($0.id) }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+    
+    func songs(for kind: PlaylistKind) -> [SongsModel] {
+        switch kind {
+        case .liked:
+            return likedSongs
+        case .disliked:
+            return dislikedSongs
+        }
+    }
+    
+    func playPlaylist(_ songs: [SongsModel]) {
+        guard !songs.isEmpty else { return }
+        playSong(songs[0], in: songs)
+    }
+    
+    func playPlaylist(_ kind: PlaylistKind) {
+        playPlaylist(songs(for: kind))
+    }
+    
+    var isCurrentSongLiked: Bool {
+        likedSongIDs.contains(song.id)
+    }
+    
+    var isCurrentSongDisliked: Bool {
+        dislikedSongIDs.contains(song.id)
+    }
+    
+    var likeIconName: String {
+        isCurrentSongLiked ? "heart.fill" : "heart"
+    }
+    
+    var dislikeIconName: String {
+        isCurrentSongDisliked ? "heart.slash.fill" : "heart.slash"
+    }
+    
     // MARK: - Private Helpers
     
     private func preparePlayer(with urlString: String) {
@@ -284,6 +314,92 @@ class SongManager: ObservableObject {
         return String(format: "%d:%02d", minutes, remainingSeconds)
     }
     
+    private func configurePlaylist(with basePlaylist: [SongsModel], selecting selectedSong: SongsModel) {
+        let preparedPlaylist = basePlaylist.map { song -> SongsModel in
+            var updated = song
+            updated.isFavourite = likedSongIDs.contains(song.id)
+            updated.isDisliked = dislikedSongIDs.contains(song.id)
+            return updated
+        }
+        
+        guard !preparedPlaylist.isEmpty else {
+            playlist = []
+            originalPlaylist = []
+            currentIndex = nil
+            return
+        }
+        
+        ensureSongsInLibrary(preparedPlaylist)
+        originalPlaylist = preparedPlaylist
+        
+        let selectedID = selectedSong.id
+        let resolvedSong = preparedPlaylist.first(where: { $0.id == selectedID }) ?? preparedPlaylist[0]
+        
+        if isShuffling {
+            playlist = shuffledPlaylist(from: preparedPlaylist, keeping: resolvedSong)
+        } else {
+            playlist = preparedPlaylist
+        }
+        
+        currentIndex = playlist.firstIndex(where: { $0.id == resolvedSong.id }) ?? 0
+    }
+    
+    private func startPlaybackAtCurrentIndex() {
+        guard let currentIndex,
+              playlist.indices.contains(currentIndex) else { return }
+        
+        var currentSong = playlist[currentIndex]
+        currentSong.isFavourite = likedSongIDs.contains(currentSong.id)
+        currentSong.isDisliked = dislikedSongIDs.contains(currentSong.id)
+        updateStoredSong(currentSong)
+        syncLibrary(with: currentSong)
+        
+        song = currentSong
+        currentTime = 0
+        duration = 0
+        
+        preparePlayer(with: currentSong.audio_url)
+    }
+    
+    private func refreshCurrentSong() {
+        guard let currentIndex,
+              playlist.indices.contains(currentIndex) else { return }
+        
+        var currentSong = playlist[currentIndex]
+        currentSong.isFavourite = likedSongIDs.contains(currentSong.id)
+        currentSong.isDisliked = dislikedSongIDs.contains(currentSong.id)
+        updateStoredSong(currentSong)
+        syncLibrary(with: currentSong)
+        
+        song = currentSong
+    }
+    
+    private func updateStoredSong(_ updatedSong: SongsModel) {
+        if let playlistIndex = playlist.firstIndex(where: { $0.id == updatedSong.id }) {
+            playlist[playlistIndex] = updatedSong
+        }
+        if let originalIndex = originalPlaylist.firstIndex(where: { $0.id == updatedSong.id }) {
+            originalPlaylist[originalIndex] = updatedSong
+        }
+        syncLibrary(with: updatedSong)
+    }
+    
+    private func ensureSongsInLibrary(_ songs: [SongsModel]) {
+        songs.forEach { syncLibrary(with: $0) }
+    }
+    
+    private func syncLibrary(with song: SongsModel) {
+        var updatedSong = song
+        updatedSong.isFavourite = likedSongIDs.contains(song.id)
+        updatedSong.isDisliked = dislikedSongIDs.contains(song.id)
+        
+        if let index = librarySongs.firstIndex(where: { $0.id == updatedSong.id }) {
+            librarySongs[index] = updatedSong
+        } else {
+            librarySongs.append(updatedSong)
+        }
+    }
+    
     private func shuffledPlaylist(from playlist: [SongsModel], keeping currentSong: SongsModel) -> [SongsModel] {
         var remainingSongs = playlist.filter { $0.id != currentSong.id }
         remainingSongs.shuffle()
@@ -293,23 +409,65 @@ class SongManager: ObservableObject {
     // MARK: - Public Toggles
     
     func toggleShuffle() {
-        let shouldShuffle = !isShuffling
-        guard !originalPlaylist.isEmpty else { return }
-        guard currentIndex != nil else { return }
+        guard hasActiveSong, !originalPlaylist.isEmpty else { return }
         
-        isShuffling = shouldShuffle
+        isShuffling.toggle()
         
         if isShuffling {
-            let shuffled = shuffledPlaylist(from: originalPlaylist, keeping: song)
-            playlist = shuffled
-            currentIndex = shuffled.firstIndex(where: { $0.id == song.id }) ?? 0
+            let baseSong = originalPlaylist.first(where: { $0.id == song.id }) ?? song
+            playlist = shuffledPlaylist(from: originalPlaylist, keeping: baseSong)
         } else {
             playlist = originalPlaylist
-            currentIndex = playlist.firstIndex(where: { $0.id == song.id }) ?? 0
         }
+        
+        currentIndex = playlist.firstIndex(where: { $0.id == song.id }) ?? currentIndex
+        refreshCurrentSong()
     }
     
     func cycleRepeatMode() {
         repeatMode.cycle()
+    }
+    
+    func toggleLike() {
+        guard hasActiveSong else { return }
+        
+        if likedSongIDs.contains(song.id) {
+            likedSongIDs.remove(song.id)
+        } else {
+            likedSongIDs.insert(song.id)
+            dislikedSongIDs.remove(song.id)
+        }
+        
+        var updatedSong = song
+        updatedSong.isFavourite = likedSongIDs.contains(song.id)
+        updatedSong.isDisliked = dislikedSongIDs.contains(song.id)
+        updateStoredSong(updatedSong)
+        song = updatedSong
+        refreshCurrentSong()
+    }
+    
+    func toggleDislike() {
+        guard hasActiveSong else { return }
+        
+        if dislikedSongIDs.contains(song.id) {
+            dislikedSongIDs.remove(song.id)
+        } else {
+            dislikedSongIDs.insert(song.id)
+            likedSongIDs.remove(song.id)
+        }
+        
+        var updatedSong = song
+        updatedSong.isFavourite = likedSongIDs.contains(song.id)
+        updatedSong.isDisliked = dislikedSongIDs.contains(song.id)
+        updateStoredSong(updatedSong)
+        song = updatedSong
+        refreshCurrentSong()
+    }
+    
+    private var hasActiveSong: Bool {
+        if let currentIndex {
+            return playlist.indices.contains(currentIndex)
+        }
+        return !song.audio_url.isEmpty
     }
 }

@@ -15,6 +15,7 @@ struct SongsModel: Identifiable {
     var cover: String
     var title: String
     var isFavourite: Bool = false
+    var isDisliked: Bool = false
 }
 
 // Demo List of Songs

@@ -164,60 +164,154 @@ struct MusicView: View {
                         HStack {
                             Text(songManager.formattedCurrentTime)
                                 .font(.caption)
+                                .monospacedDigit()
                             
                             Spacer()
                             
                             Text(songManager.formattedDuration)
                                 .font(.caption)
+                                .monospacedDigit()
                         }
                         .foregroundStyle(.gray)
                         
-                        HStack(alignment: .center, spacing: 30, content: {
-                            Button(action: {
-                                songManager.toggleShuffle()
-                            }, label: {
-                                Image(systemName: "shuffle")
-                                    .imageScale(.medium)
-                                    .foregroundStyle(songManager.isShuffling ? .white : .gray)
-                            })
-                            
-                            Button(action: {
-                                songManager.playPrevious()
-                            }, label: {
-                                Image(systemName: "backward.end.fill")
-                                    .imageScale(.medium)
-                            })
-                            
-                            Button(action: {
-                                songManager.togglePlayPause()
-                            }, label: {
-                                Image(systemName: songManager.isPlaying ? "pause.fill" : "play.fill")
-                                    .imageScale(.large)
-                                    .padding()
-                                    .background(.white)
-                                    .clipShape(Circle())
-                                    .foregroundStyle(.black)
-                            })
-                            
-                            Button(action: {
-                                songManager.playNext()
-                            }, label: {
-                                Image(systemName: "forward.end.fill")
-                                    .imageScale(.medium)
-                            })
-                            
-                            Button(action: {
-                                songManager.cycleRepeatMode()
-                            }, label: {
-                                Image(systemName: songManager.repeatIconName)
-                                    .imageScale(.medium)
-                                    .foregroundStyle(songManager.repeatMode == .none ? .gray : .white)
-                            })
-                        })
+                        controlButtonsLayout()
                     })
                 })
             })
         }
+    }
+    
+    // MARK: - Control Buttons
+    
+    @ViewBuilder
+    private func controlButtonsLayout() -> some View {
+        if #available(iOS 16.0, *) {
+            ViewThatFits(in: .horizontal) {
+                horizontalControlButtons(spacing: 20)
+                verticalControlButtons()
+            }
+        } else {
+            horizontalControlButtons(spacing: 18)
+        }
+    }
+    
+    @ViewBuilder
+    private func horizontalControlButtons(spacing: CGFloat) -> some View {
+        HStack(alignment: .center, spacing: spacing) {
+            dislikeButton()
+            shuffleButton()
+            previousButton()
+            playPauseButton()
+            nextButton()
+            repeatButton()
+            likeButton()
+        }
+    }
+    
+    @ViewBuilder
+    private func verticalControlButtons() -> some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 20) {
+                dislikeButton()
+                shuffleButton()
+                previousButton()
+            }
+            
+            playPauseButton()
+                .padding(.vertical, 6)
+            
+            HStack(spacing: 20) {
+                nextButton()
+                repeatButton()
+                likeButton()
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+    
+    @ViewBuilder
+    private func dislikeButton() -> some View {
+        Button(action: {
+            songManager.toggleDislike()
+        }) {
+            Image(systemName: songManager.dislikeIconName)
+                .imageScale(.medium)
+                .foregroundStyle(songManager.isCurrentSongDisliked ? Color.red : .gray)
+        }
+        .accessibilityLabel(songManager.isCurrentSongDisliked ? "Remove dislike" : "Dislike song")
+    }
+    
+    @ViewBuilder
+    private func shuffleButton() -> some View {
+        Button(action: {
+            songManager.toggleShuffle()
+        }) {
+            Image(systemName: "shuffle")
+                .imageScale(.medium)
+                .foregroundStyle(songManager.isShuffling ? .white : .gray)
+        }
+        .accessibilityLabel(songManager.isShuffling ? "Disable shuffle" : "Enable shuffle")
+    }
+    
+    @ViewBuilder
+    private func previousButton() -> some View {
+        Button(action: {
+            songManager.playPrevious()
+        }) {
+            Image(systemName: "backward.end.fill")
+                .imageScale(.medium)
+        }
+        .accessibilityLabel("Previous song")
+    }
+    
+    @ViewBuilder
+    private func playPauseButton() -> some View {
+        Button(action: {
+            songManager.togglePlayPause()
+        }) {
+            Image(systemName: songManager.isPlaying ? "pause.fill" : "play.fill")
+                .imageScale(.large)
+                .padding()
+                .background(.white)
+                .clipShape(Circle())
+                .foregroundStyle(.black)
+        }
+        .accessibilityLabel(songManager.isPlaying ? "Pause" : "Play")
+    }
+    
+    @ViewBuilder
+    private func nextButton() -> some View {
+        Button(action: {
+            songManager.playNext()
+        }) {
+            Image(systemName: "forward.end.fill")
+                .imageScale(.medium)
+        }
+        .accessibilityLabel("Next song")
+    }
+    
+    @ViewBuilder
+    private func repeatButton() -> some View {
+        Button(action: {
+            songManager.cycleRepeatMode()
+        }) {
+            Image(systemName: songManager.repeatIconName)
+                .imageScale(.medium)
+                .foregroundStyle(songManager.repeatMode == .none ? .gray : .white)
+        }
+        .accessibilityLabel("Change repeat mode")
+    }
+    
+    @ViewBuilder
+    private func likeButton() -> some View {
+        Button(action: {
+            songManager.toggleLike()
+        }) {
+            Image(systemName: songManager.likeIconName)
+                .imageScale(.medium)
+                .foregroundStyle(songManager.isCurrentSongLiked ? Color.pink : .gray)
+        }
+        .accessibilityLabel(songManager.isCurrentSongLiked ? "Remove like" : "Like song")
     }
 }
 

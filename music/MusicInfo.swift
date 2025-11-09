@@ -45,11 +45,15 @@ struct MusicInfo: View {
                 Text(songManager.song.title)
                     .fontWeight(.semibold)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 Text(songManager.song.artist)
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
             .padding(.horizontal, 15)
             
             Spacer()
