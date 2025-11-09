@@ -40,7 +40,7 @@ struct MusicView: View {
                 LinearGradient(gradient: Gradient(colors: [Color.blue, Color.clear]), startPoint: .top, endPoint: .bottom)
                     .frame(height: 300)
                 
-                VStack(spacing: 15) {
+                VStack(spacing: 10) {
                     HStack(alignment: .top) {
                         Image(systemName: "chevron.down")
                             .imageScale(.large)
@@ -79,14 +79,14 @@ struct MusicView: View {
                                 .background(.white.opacity(0.1))
                                 .clipShape(.rect(cornerRadius: 5))
                         }
-                            .frame(width: size.width, height: size.height)
-                            .clipShape(RoundedRectangle(cornerRadius: animateContent ? 30 : 60, style: .continuous))
+                        .frame(width: size.width, height: size.height)
+                        .clipShape(RoundedRectangle(cornerRadius: animateContent ? 30 : 60, style: .continuous))
                     }
                     .matchedGeometryEffect(id: "SONGCOVER", in: animation)
                     .frame(width: size.width - 50)
                     .padding(.vertical, size.height < 700 ? 30 : 40)
                     
-                PlayerView(size)
+                    PlayerView(size)
                         .offset(y: animateContent ? 0 : size.height)
                 }
                 .padding(.top, safeArea.top + (safeArea.bottom == 0 ? 10 : 0))
@@ -140,7 +140,7 @@ struct MusicView: View {
             // sizing t for more compact look
             VStack(spacing: spacing, content: {
                 VStack(spacing: spacing, content: {
-                    HStack(alignment: .center, spacing: 15, content: {
+                    VStack(alignment: .center, spacing: 15, content: {
                         VStack(alignment: .center, spacing: 10, content: {
                             Text("\(songManager.song.title))")
                                 .font(.title)

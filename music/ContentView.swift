@@ -77,9 +77,7 @@ struct ContentView: View {
         }
         .frame(height: 80)
         .offset(y: -49)
-        
     }
-    
 }
 
 #Preview {
