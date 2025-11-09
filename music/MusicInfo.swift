@@ -33,7 +33,7 @@ struct MusicInfo: View {
                             .clipShape(.rect(cornerRadius: 60, style: .continuous))
                         
                         
-                        CircleProgressView(progress: 40)
+                        CircleProgressView(progress: songManager.progress)
                             .frame(width: size.width, height: size.height)
                     }
                     .matchedGeometryEffect(id: "SONGCOVER", in: animation)
@@ -41,17 +41,23 @@ struct MusicInfo: View {
             }
             .frame(width: 55, height: 55)
             
-            Text("\(songManager.song.title))")
-                .fontWeight(.semibold)
-                .lineLimit(1)
-                .padding(.horizontal, 15)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(songManager.song.title)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+                Text(songManager.song.artist)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 15)
             
             Spacer()
             
             Button {
-                
+                songManager.togglePlayPause()
             } label: {
-                Image(systemName: "pause.fill")
+                Image(systemName: songManager.isPlaying ? "pause.fill" : "play.fill")
                     .font(.title2)
                     .foregroundStyle(.black)
                     .padding()
@@ -85,11 +91,11 @@ struct CircleProgressView: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.clear,
+                .stroke(Color.white.opacity(0.2),
                         lineWidth: 4)
             
             Circle()
-                .trim(from: 0, to: 0.25)
+                .trim(from: 0, to: min(max(progress, 0), 1))
                 .stroke(Color.blue,
                         style: StrokeStyle(lineWidth: 4, lineCap: .round))
                 .rotationEffect(.degrees(-90))

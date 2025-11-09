@@ -111,7 +111,7 @@ struct Home: View {
                             Spacer()
                         })
                         .onTapGesture {
-                            songManager.playSong(song: item)
+                            songManager.playSong(item, in: sampleSongs)
                         }
                     }
                 })
@@ -152,7 +152,7 @@ struct Home: View {
                                 .font(.caption)
                         })
                         .onTapGesture {
-                            songManager.playSong(song: item)
+                            songManager.playSong(item, in: sampleSongs)
                         }
                     }
                 })

@@ -54,7 +54,8 @@ struct Search: View {
                         Spacer()
                     }
                     .onTapGesture {
-                        songManager.playSong(song: item)
+                        let playlist = sampleSortList.isEmpty ? sampleSongs : sampleSortList
+                        songManager.playSong(item, in: playlist)
                     }
                 }
             }

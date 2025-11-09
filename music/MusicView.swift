@@ -93,12 +93,6 @@ struct MusicView: View {
                 .padding(.bottom, safeArea.bottom == 0 ? 10 : safeArea.bottom)
                 .padding(.horizontal, 25)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.36)) {
-                        expandSheet.toggle()
-                        animateContent.toggle()
-                    }
-                }
             }
             .contentShape(Rectangle())
             .offset(y: offsetY)
@@ -128,9 +122,6 @@ struct MusicView: View {
             }
         }
     }
-    
-    @State var value = 11.0
-    
     @ViewBuilder
     func PlayerView(_ mainSize: CGSize) -> some View {
         GeometryReader {
@@ -142,46 +133,86 @@ struct MusicView: View {
                 VStack(spacing: spacing, content: {
                     VStack(alignment: .center, spacing: 15, content: {
                         VStack(alignment: .center, spacing: 10, content: {
-                            Text("\(songManager.song.title))")
+                            Text(songManager.song.title)
                                 .font(.title)
                                 .fontWeight(.semibold)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
                             
-                            Text("\(songManager.song.artist))")
+                            Text(songManager.song.artist)
                                 .font(.title3)
                                 .foregroundStyle(.gray)
+                                .lineLimit(1)
                         })
                         .frame(maxWidth: .infinity)
                         
-                        Slider(value: $value, in: 0...100)
+                        Slider(
+                            value: Binding(
+                                get: {
+                                    songManager.duration > 0 ? songManager.currentTime : 0
+                                },
+                                set: { newValue in
+                                    songManager.seek(to: newValue)
+                                }
+                            ),
+                            in: 0...(songManager.duration > 0 ? songManager.duration : 1),
+                            step: 1
+                        )
+                        .disabled(songManager.duration == 0)
+                        .tint(.white)
+                        
                         HStack {
-                            Text("0:50")
+                            Text(songManager.formattedCurrentTime)
                                 .font(.caption)
                             
                             Spacer()
                             
-                            Text("3:55")
+                            Text(songManager.formattedDuration)
                                 .font(.caption)
                         }
+                        .foregroundStyle(.gray)
                         
                         HStack(alignment: .center, spacing: 30, content: {
-                            Image(systemName: "shuffle")
-                                .imageScale(.medium)
+                            Button(action: {
+                                songManager.toggleShuffle()
+                            }, label: {
+                                Image(systemName: "shuffle")
+                                    .imageScale(.medium)
+                                    .foregroundStyle(songManager.isShuffling ? .white : .gray)
+                            })
                             
-                            Image(systemName: "backward.end.fill")
-                                .imageScale(.medium)
+                            Button(action: {
+                                songManager.playPrevious()
+                            }, label: {
+                                Image(systemName: "backward.end.fill")
+                                    .imageScale(.medium)
+                            })
                             
-                            Image(systemName: "play.fill")
-                                .imageScale(.large)
-                                .padding()
-                                .background(.white)
-                                .clipShape(Circle())
-                                .foregroundStyle(.black)
+                            Button(action: {
+                                songManager.togglePlayPause()
+                            }, label: {
+                                Image(systemName: songManager.isPlaying ? "pause.fill" : "play.fill")
+                                    .imageScale(.large)
+                                    .padding()
+                                    .background(.white)
+                                    .clipShape(Circle())
+                                    .foregroundStyle(.black)
+                            })
                             
-                            Image(systemName: "forward.end.fill")
-                                .imageScale(.medium)
+                            Button(action: {
+                                songManager.playNext()
+                            }, label: {
+                                Image(systemName: "forward.end.fill")
+                                    .imageScale(.medium)
+                            })
                             
-                            Image(systemName: "repeat")
-                                .imageScale(.medium)
+                            Button(action: {
+                                songManager.cycleRepeatMode()
+                            }, label: {
+                                Image(systemName: songManager.repeatIconName)
+                                    .imageScale(.medium)
+                                    .foregroundStyle(songManager.repeatMode == .none ? .gray : .white)
+                            })
                         })
                     })
                 })
