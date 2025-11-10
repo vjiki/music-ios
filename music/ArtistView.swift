@@ -13,7 +13,7 @@ struct ArtistView: View {
     @EnvironmentObject var songManager: SongManager
     
     private var artistSongs: [SongsModel] {
-        sampleSongs.filter { $0.artist == artistName }
+        songManager.librarySongs.filter { $0.artist == artistName }
     }
     
     private var popularTracks: [SongsModel] {

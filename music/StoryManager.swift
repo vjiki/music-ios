@@ -15,8 +15,8 @@ class StoryManager: ObservableObject {
     private let currentUserName = "You"
     private let currentUserProfileImage: String? = nil
     
-    init() {
-        loadStories()
+    init(songs: [SongsModel] = sampleSongs) {
+        loadStories(from: songs)
     }
     
     func createStory(with song: SongsModel) {
@@ -72,9 +72,13 @@ class StoryManager: ObservableObject {
         userStories.contains { !$0.isViewed }
     }
     
-    private func loadStories() {
+    func updateStories(from songs: [SongsModel]) {
+        loadStories(from: songs)
+    }
+    
+    private func loadStories(from songs: [SongsModel]) {
         // Sample stories for demo
-        let sampleStories = sampleSongs.prefix(5).enumerated().map { index, song in
+        let sampleStories = songs.prefix(5).enumerated().map { index, song in
             MusicStory(
                 userId: "user_\(index)",
                 userName: "User \(index + 1)",

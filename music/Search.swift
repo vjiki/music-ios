@@ -18,7 +18,7 @@ struct Search: View {
     
     private var displayedSongs: [SongsModel] {
         if searchText.isEmpty {
-            return sampleSongs
+            return songManager.librarySongs
         } else {
             return sampleSortList
         }
@@ -35,7 +35,7 @@ struct Search: View {
                     TextField("Search", text: $searchText)
                         .foregroundStyle(.white)
                         .onChange(of: searchText, perform: { value in
-                            sampleSortList = sampleSongs.filter {
+                            sampleSortList = songManager.librarySongs.filter {
                                 $0.title.localizedCaseInsensitiveContains(searchText) ||
                                 $0.artist.localizedCaseInsensitiveContains(searchText)
                             }

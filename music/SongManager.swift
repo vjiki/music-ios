@@ -21,6 +21,7 @@ class SongManager: ObservableObject {
     private let playlistManager: PlaylistManagerProtocol
     private let preferenceManager: PreferenceManagerProtocol
     private let nowPlayingService: NowPlayingServiceProtocol
+    private let songsService: SongsServiceProtocol
     
     // MARK: - Published Properties
     @Published private(set) var song: SongsModel = SongsModel(artist: "", audio_url: "", cover: "", title: "")
@@ -31,7 +32,7 @@ class SongManager: ObservableObject {
     @Published var duration: TimeInterval = 0
     @Published private(set) var isShuffling: Bool = false
     @Published private(set) var repeatMode: RepeatMode = .none
-    @Published private(set) var librarySongs: [SongsModel] = sampleSongs
+    @Published private(set) var librarySongs: [SongsModel] = []
     
     // MARK: - Computed Properties
     var likedSongIDs: Set<String> { preferenceManager.likedSongIDs }
@@ -83,15 +84,28 @@ class SongManager: ObservableObject {
         audioPlayer: AudioPlayerServiceProtocol = AudioPlayerService(),
         playlistManager: PlaylistManagerProtocol = PlaylistManager(),
         preferenceManager: PreferenceManagerProtocol = PreferenceManager(),
-        nowPlayingService: NowPlayingServiceProtocol = NowPlayingService()
+        nowPlayingService: NowPlayingServiceProtocol = NowPlayingService(),
+        songsService: SongsServiceProtocol = SongsService()
     ) {
         self.audioPlayer = audioPlayer
         self.playlistManager = playlistManager
         self.preferenceManager = preferenceManager
         self.nowPlayingService = nowPlayingService
+        self.songsService = songsService
+        
+        // Initialize with songs from service (fallback to sampleSongs)
+        self.librarySongs = songsService.songs
         
         setupAudioPlayerCallbacks()
         setupNowPlayingService()
+        
+        // Fetch songs from API
+        Task {
+            await songsService.fetchSongs()
+            await MainActor.run {
+                self.librarySongs = songsService.songs
+            }
+        }
     }
     
     // MARK: - Public Methods
@@ -220,6 +234,13 @@ class SongManager: ObservableObject {
     
     func playPlaylist(_ kind: PlaylistKind) {
         playPlaylist(songs(for: kind))
+    }
+    
+    func refreshSongs() async {
+        await songsService.fetchSongs()
+        await MainActor.run {
+            self.librarySongs = songsService.songs
+        }
     }
     
     // MARK: - Private Methods

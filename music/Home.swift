@@ -9,7 +9,7 @@ import SwiftUI
 
 struct Home: View {
     @EnvironmentObject var songManager: SongManager
-    @StateObject private var storyManager = StoryManager()
+    @StateObject private var storyManager = StoryManager(songs: [])
     @State private var showStoryCreation = false
     @State private var showMessages = false
     
@@ -21,16 +21,22 @@ struct Home: View {
                     .padding(.bottom, 16)
                 
                 heroSection
-                
-                TagsView()
-                
-                QuickPlay()
-                
+            
+            TagsView()
+            
+            QuickPlay()
+            
                 MixesSection()
             }
             .padding(.bottom, 200)
         }
         .background(Color.black.ignoresSafeArea())
+        .onAppear {
+            storyManager.updateStories(from: songManager.librarySongs)
+        }
+        .onChange(of: songManager.librarySongs) { _ in
+            storyManager.updateStories(from: songManager.librarySongs)
+        }
         .sheet(isPresented: $showStoryCreation) {
             StoryCreationView(storyManager: storyManager, songManager: songManager)
         }
@@ -57,8 +63,8 @@ struct Home: View {
                 Spacer()
                 
                 Button {
-                    if let first = sampleSongs.first {
-                        songManager.playSong(first, in: sampleSongs)
+                    if let first = songManager.librarySongs.first {
+                        songManager.playSong(first, in: songManager.librarySongs)
                     }
                 } label: {
                     VStack(spacing: 16) {
@@ -103,9 +109,9 @@ struct Home: View {
                 Text("Music")
                     .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(.white)
-                
-                Spacer()
-                
+                    
+                    Spacer()
+                    
                 Button {
                     songManager.toggleDislike()
                 } label: {
@@ -197,8 +203,8 @@ struct Home: View {
                 subtitle: "Tailored tracks",
                 icon: "person.2.fill"
             ) {
-                if let first = sampleSongs.first {
-                    songManager.playSong(first, in: sampleSongs)
+                if let first = songManager.librarySongs.first {
+                    songManager.playSong(first, in: songManager.librarySongs)
                 }
             }
             
@@ -207,8 +213,8 @@ struct Home: View {
                 subtitle: "What's hot now",
                 icon: "flame.fill"
             ) {
-                if let randomSong = sampleSongs.randomElement() {
-                    songManager.playSong(randomSong, in: sampleSongs.shuffled())
+                if let randomSong = songManager.librarySongs.randomElement() {
+                    songManager.playSong(randomSong, in: songManager.librarySongs.shuffled())
                 }
             }
         }
@@ -261,13 +267,13 @@ struct Home: View {
                 .fontWeight(.bold)
                 .padding(.horizontal, 24)
             
-            ScrollView(.horizontal, showsIndicators: false) {
+        ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 14) {
-                    ForEach(sampleTagList, id: \.id) { item in
-                        Text(item.tag)
+                ForEach(sampleTagList, id: \.id) { item in
+                    Text(item.tag)
                             .font(.subheadline)
                             .padding(.horizontal, 18)
-                            .padding(.vertical, 10)
+                        .padding(.vertical, 10)
                             .background(
                                 Capsule()
                                     .fill(Color.white.opacity(0.08))
@@ -296,30 +302,30 @@ struct Home: View {
             
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 18) {
-                    ForEach(sampleSongs, id: \.id) { item in
+                    ForEach(songManager.librarySongs, id: \.id) { item in
                         Button {
-                            songManager.playSong(item, in: sampleSongs)
+                            songManager.playSong(item, in: songManager.librarySongs)
                         } label: {
                             HStack(spacing: 14) {
-                                AsyncImage(url: URL(string: item.cover)) { img in
-                                    img.resizable()
-                                        .scaledToFill()
-                                } placeholder: {
-                                    ProgressView()
+                            AsyncImage(url: URL(string: item.cover)) { img in
+                                img.resizable()
+                                    .scaledToFill()
+                            } placeholder: {
+                                ProgressView()
                                         .frame(width: 60, height: 60)
-                                }
-                                .frame(width: 60, height: 60)
+                            }
+                            .frame(width: 60, height: 60)
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                
+
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.title)
-                                        .font(.headline)
+                                    .font(.headline)
                                         .foregroundStyle(.white)
                                         .lineLimit(1)
                                         .minimumScaleFactor(0.85)
                                     
                                     Text(item.artist)
-                                        .font(.caption)
+                                    .font(.caption)
                                         .foregroundStyle(.white.opacity(0.7))
                                         .lineLimit(1)
                                 }
@@ -348,8 +354,8 @@ struct Home: View {
                     .fontWeight(.bold)
                 Spacer()
                 Button {
-                    if let first = sampleSongs.first {
-                        songManager.playSong(first, in: sampleSongs)
+                    if let first = songManager.librarySongs.first {
+                        songManager.playSong(first, in: songManager.librarySongs)
                     }
                 } label: {
                     Image(systemName: "play.circle.fill")
@@ -361,7 +367,7 @@ struct Home: View {
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 18) {
-                    ForEach(sampleSongs, id: \.id) { item in
+                    ForEach(songManager.librarySongs, id: \.id) { item in
                         VStack(alignment: .leading, spacing: 12) {
                             AsyncImage(url: URL(string: item.cover)) { img in
                                 img.resizable()
@@ -374,12 +380,12 @@ struct Home: View {
                             
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.title)
-                                    .font(.headline)
+                                .font(.headline)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.85)
-                                
+                            
                                 Text(item.artist)
-                                    .font(.caption)
+                                .font(.caption)
                                     .foregroundStyle(.white.opacity(0.7))
                                     .lineLimit(1)
                             }
@@ -393,7 +399,7 @@ struct Home: View {
                         )
                         .shadow(color: Color.black.opacity(0.2), radius: 16, x: 0, y: 12)
                         .onTapGesture {
-                            songManager.playSong(item, in: sampleSongs)
+                            songManager.playSong(item, in: songManager.librarySongs)
                         }
                     }
                 }
@@ -496,7 +502,7 @@ private struct StoryCreationView: View {
                         .padding(.bottom)
                     
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))], spacing: 16) {
-                        ForEach(sampleSongs) { song in
+                        ForEach(songManager.librarySongs) { song in
                             Button {
                                 selectedSong = song
                                 storyManager.createStory(with: song)
