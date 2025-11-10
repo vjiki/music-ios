@@ -11,6 +11,7 @@ struct Home: View {
     @EnvironmentObject var songManager: SongManager
     @StateObject private var storyManager = StoryManager()
     @State private var showStoryCreation = false
+    @State private var showMessages = false
     
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -32,6 +33,9 @@ struct Home: View {
         .background(Color.black.ignoresSafeArea())
         .sheet(isPresented: $showStoryCreation) {
             StoryCreationView(storyManager: storyManager, songManager: songManager)
+        }
+        .sheet(isPresented: $showMessages) {
+            MessagesView()
         }
     }
     
@@ -121,7 +125,7 @@ struct Home: View {
                 .buttonStyle(.plain)
                 
                 Button {
-                    // Messages action
+                    showMessages = true
                 } label: {
                     Image(systemName: "message")
                         .font(.system(size: 24, weight: .regular))

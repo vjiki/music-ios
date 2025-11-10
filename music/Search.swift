@@ -8,63 +8,147 @@
 import SwiftUI
 
 struct Search: View {
+    @Binding var expandSheet: Bool
+    var animation: Namespace.ID
+    
     @State var searchText: String = ""
     @State var sampleSortList: [SongsModel] = []
 
     @EnvironmentObject var songManager: SongManager
     
+    private var displayedSongs: [SongsModel] {
+        if searchText.isEmpty {
+            return sampleSongs
+        } else {
+            return sampleSortList
+        }
+    }
+    
     var body: some View {
-        VStack {
-            HStack {
-                Image(systemName: "magnifyingglass")
-
-                TextField("Search", text: $searchText)
-                    .onChange(of: searchText, perform: { value in
-                        sampleSortList = sampleSongs.filter {
-                            $0.title.contains(searchText) || $0.artist.contains(searchText)
-                        }
-                    })
-            }
-            .padding()
-            .background(.white.opacity(0.2))
-            .clipShape(Capsule())
-            .padding(.horizontal)
-
-            ScrollView {
-                ForEach(sampleSortList) { item in
-                    // Song list item content goes here
-                    HStack {
-                        AsyncImage(url: URL(string: item.cover)) { img in
-                            img.resizable()
-                                .scaledToFill()
-                        } placeholder: {
-                            ProgressView()
-                        }
-                        .frame(width: 60, height: 60)
-                        .clipShape(.rect(cornerRadius: 5))
-                        
-                        VStack(alignment: .leading, content: {
-                            Text("\(item.title)")
-                                .font(.headline)
-                            
-                            Text("\(item.artist)")
-                                .font(.caption)
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Search bar
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.white.opacity(0.6))
+                    
+                    TextField("Search", text: $searchText)
+                        .foregroundStyle(.white)
+                        .onChange(of: searchText, perform: { value in
+                            sampleSortList = sampleSongs.filter {
+                                $0.title.localizedCaseInsensitiveContains(searchText) ||
+                                $0.artist.localizedCaseInsensitiveContains(searchText)
+                            }
                         })
-                        
-                        Spacer()
+                }
+                .padding()
+                .background(.white.opacity(0.2))
+                .clipShape(Capsule())
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                
+                // Tracks list
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(displayedSongs) { item in
+                            TrackRow(song: item) {
+                                songManager.playSong(item, in: displayedSongs)
+                                expandSheet = true
+                            }
+                        }
                     }
-                    .onTapGesture {
-                        let playlist = sampleSortList.isEmpty ? sampleSongs : sampleSortList
-                        songManager.playSong(item, in: playlist)
+                    .padding(.top, 16)
+                }
+            }
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("Tracks")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        // Back action if needed
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .foregroundStyle(.white)
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        // Menu action
+                    } label: {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundStyle(.white)
                     }
                 }
             }
-            .padding()
         }
     }
 }
 
+private struct TrackRow: View {
+    let song: SongsModel
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                // Album art
+                AsyncImage(url: URL(string: song.cover)) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    ProgressView()
+                        .tint(.white.opacity(0.6))
+                }
+                .frame(width: 60, height: 60)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                
+                // Track info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(song.title)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    
+                    Text(song.artist)
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                // Options button
+                Button {
+                    // Options action
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 #Preview {
-    Search()
-        .preferredColorScheme(.dark)
+    struct PreviewWrapper: View {
+        @Namespace var animation
+        
+        var body: some View {
+            Search(expandSheet: .constant(false), animation: animation)
+                .preferredColorScheme(.dark)
+                .environmentObject(SongManager())
+        }
+    }
+    
+    return PreviewWrapper()
 }

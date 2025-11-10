@@ -14,6 +14,7 @@ struct MusicView: View {
     // View Properties
     @State private var animateContent: Bool = false
     @State private var offsetY: CGFloat = 0
+    @State private var showArtistView = false
     
     @EnvironmentObject var songManager: SongManager
     
@@ -23,6 +24,10 @@ struct MusicView: View {
             let safeArea = $0.safeAreaInsets
             
             ZStack(alignment: .top) {
+                // Opaque black background
+                Color.black
+                    .ignoresSafeArea()
+                
                 RoundedRectangle(cornerRadius: animateContent ? deviceCornerRadius : 0, style: .continuous)
                     .fill(.black)
                     .overlay {
@@ -121,6 +126,10 @@ struct MusicView: View {
                 animateContent = true
             }
         }
+        .sheet(isPresented: $showArtistView) {
+            ArtistView(artistName: songManager.song.artist)
+                .environmentObject(songManager)
+        }
     }
     @ViewBuilder
     func PlayerView(_ mainSize: CGSize) -> some View {
@@ -139,10 +148,15 @@ struct MusicView: View {
                                 .multilineTextAlignment(.center)
                                 .lineLimit(2)
                             
-                            Text(songManager.song.artist)
-                                .font(.title3)
-                                .foregroundStyle(.gray)
-                                .lineLimit(1)
+                            Button {
+                                showArtistView = true
+                            } label: {
+                                Text(songManager.song.artist)
+                                    .font(.title3)
+                                    .foregroundStyle(.gray)
+                                    .lineLimit(1)
+                            }
+                            .buttonStyle(.plain)
                         })
                         .frame(maxWidth: .infinity)
                         
@@ -235,7 +249,7 @@ struct MusicView: View {
             songManager.toggleDislike()
         }) {
             Image(systemName: songManager.dislikeIconName)
-                .imageScale(.medium)
+                .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(songManager.isCurrentSongDisliked ? Color.red : .gray)
         }
         .accessibilityLabel(songManager.isCurrentSongDisliked ? "Remove dislike" : "Dislike song")
@@ -247,7 +261,7 @@ struct MusicView: View {
             songManager.toggleShuffle()
         }) {
             Image(systemName: "shuffle")
-                .imageScale(.medium)
+                .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(songManager.isShuffling ? .white : .gray)
         }
         .accessibilityLabel(songManager.isShuffling ? "Disable shuffle" : "Enable shuffle")
@@ -259,7 +273,7 @@ struct MusicView: View {
             songManager.playPrevious()
         }) {
             Image(systemName: "backward.end.fill")
-                .imageScale(.medium)
+                .font(.system(size: 20, weight: .medium))
         }
         .accessibilityLabel("Previous song")
     }
@@ -270,8 +284,8 @@ struct MusicView: View {
             songManager.togglePlayPause()
         }) {
             Image(systemName: songManager.isPlaying ? "pause.fill" : "play.fill")
-                .imageScale(.large)
-                .padding()
+                .font(.system(size: 30, weight: .semibold))
+                .padding(21)
                 .background(.white)
                 .clipShape(Circle())
                 .foregroundStyle(.black)
@@ -285,7 +299,7 @@ struct MusicView: View {
             songManager.playNext()
         }) {
             Image(systemName: "forward.end.fill")
-                .imageScale(.medium)
+                .font(.system(size: 20, weight: .medium))
         }
         .accessibilityLabel("Next song")
     }
@@ -296,7 +310,7 @@ struct MusicView: View {
             songManager.cycleRepeatMode()
         }) {
             Image(systemName: songManager.repeatIconName)
-                .imageScale(.medium)
+                .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(songManager.repeatMode == .none ? .gray : .white)
         }
         .accessibilityLabel("Change repeat mode")
@@ -308,7 +322,7 @@ struct MusicView: View {
             songManager.toggleLike()
         }) {
             Image(systemName: songManager.likeIconName)
-                .imageScale(.medium)
+                .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(songManager.isCurrentSongLiked ? Color.pink : .gray)
         }
         .accessibilityLabel(songManager.isCurrentSongLiked ? "Remove like" : "Like song")

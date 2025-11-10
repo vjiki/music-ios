@@ -30,7 +30,7 @@ struct ContentView: View {
                 .tag(Tab.home)
                 .environmentObject(songManager)
             
-            Search()
+            Search(expandSheet: $expandSheet, animation: animation)
                 .tag(Tab.search)
                 .environmentObject(songManager)
             
@@ -58,8 +58,14 @@ struct ContentView: View {
         }
         .overlay {
             if expandSheet {
-                MusicView(expandSheet: $expandSheet, animation: animation)
-                    .environmentObject(songManager)
+                ZStack {
+                    // Opaque black background to hide content behind
+                    Color.black
+                        .ignoresSafeArea()
+                    
+                    MusicView(expandSheet: $expandSheet, animation: animation)
+                        .environmentObject(songManager)
+                }
             }
         }
     }
