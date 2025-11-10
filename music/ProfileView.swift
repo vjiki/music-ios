@@ -9,22 +9,40 @@ import SwiftUI
 
 struct ProfileView: View {
     @EnvironmentObject var songManager: SongManager
+    @State private var showSettings = false
     
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 24) {
-                header
-                
-                statsSection
-                
-                likedSongsSection
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 24) {
+                    header
+                    
+                    statsSection
+                    
+                    likedSongsSection
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 100)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 100)
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("Profile")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundStyle(.white)
+                    }
+                }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+                    .environmentObject(songManager)
+            }
         }
-        .background(Color.black.ignoresSafeArea())
-        .navigationTitle("Profile")
     }
     
     private var header: some View {

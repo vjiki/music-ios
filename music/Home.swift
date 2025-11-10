@@ -9,7 +9,7 @@ import SwiftUI
 
 struct Home: View {
     @EnvironmentObject var songManager: SongManager
-    @StateObject private var storyManager = StoryManager(songs: [])
+    @StateObject private var storyManager = StoryManager()
     @State private var showStoryCreation = false
     @State private var showMessages = false
     
@@ -32,10 +32,10 @@ struct Home: View {
         }
         .background(Color.black.ignoresSafeArea())
         .onAppear {
-            storyManager.updateStories(from: songManager.librarySongs)
-        }
-        .onChange(of: songManager.librarySongs) { _ in
-            storyManager.updateStories(from: songManager.librarySongs)
+            // Update stories when view appears
+            if !songManager.librarySongs.isEmpty {
+                storyManager.updateStories(from: songManager.librarySongs)
+            }
         }
         .sheet(isPresented: $showStoryCreation) {
             StoryCreationView(storyManager: storyManager, songManager: songManager)
@@ -553,5 +553,6 @@ private struct StoryCreationView: View {
 
 #Preview {
     ContentView()
+        .environmentObject(SongManager())
         .preferredColorScheme(.dark)
 }
