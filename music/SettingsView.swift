@@ -14,6 +14,8 @@ struct SettingsView: View {
     
     @State private var searchText = ""
     @State private var showLoginView = false
+    @State private var showLogoutConfirmation = false
+    @State private var isLoggingOut = false
     
     var body: some View {
         NavigationStack {
@@ -413,19 +415,65 @@ struct SettingsView: View {
             SectionHeader(title: "Login")
             
             if authService.isAuthenticated {
-                // User is logged in - show logout button
-                Button {
-                    Task {
-                        await authService.signOut()
+                // User is logged in - show user info and logout button
+                if let user = authService.currentUser {
+                    // User info section
+                    HStack(spacing: 12) {
+                        if let avatarUrl = user.avatarUrl, !avatarUrl.isEmpty {
+                            AsyncImage(url: URL(string: avatarUrl)) { image in
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                            } placeholder: {
+                                ProgressView()
+                                    .tint(.white.opacity(0.6))
+                            }
+                            .frame(width: 40, height: 40)
+                            .clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.circle.fill")
+                                .font(.system(size: 40))
+                                .foregroundStyle(.white.opacity(0.6))
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(user.nickname ?? user.name ?? "User")
+                                .font(.body)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.white)
+                            
+                            if let email = user.email {
+                                Text(email)
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                        }
+                        
+                        Spacer()
                     }
-                } label: {
-                    Text("Log out")
-                        .font(.body)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                 }
+                
+                // Logout button
+                Button {
+                    showLogoutConfirmation = true
+                } label: {
+                    HStack {
+                        if isLoggingOut {
+                            ProgressView()
+                                .tint(.red)
+                        } else {
+                            Text("Log out")
+                                .font(.body)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                }
+                .disabled(isLoggingOut)
             } else {
                 // User is not logged in - show add account button
                 Button {
@@ -443,6 +491,24 @@ struct SettingsView: View {
         .sheet(isPresented: $showLoginView) {
             LoginView()
                 .environmentObject(authService)
+        }
+        .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
+            // Dismiss SettingsView when authentication succeeds
+            if isAuthenticated {
+                showLoginView = false
+            }
+        }
+        .confirmationDialog("Log Out", isPresented: $showLogoutConfirmation, titleVisibility: .visible) {
+            Button("Log Out", role: .destructive) {
+                Task {
+                    isLoggingOut = true
+                    await authService.signOut()
+                    isLoggingOut = false
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Are you sure you want to log out?")
         }
     }
 }

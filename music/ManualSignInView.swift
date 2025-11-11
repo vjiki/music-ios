@@ -11,12 +11,18 @@ struct ManualSignInView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var authService: AuthService
     
+    let onSignInSuccess: (() -> Void)?
+    
     @State private var email = ""
     @State private var password = ""
     @State private var isSigningIn = false
     @State private var showError = false
     @State private var errorMessage: String?
     @FocusState private var focusedField: Field?
+    
+    init(onSignInSuccess: (() -> Void)? = nil) {
+        self.onSignInSuccess = onSignInSuccess
+    }
     
     enum Field {
         case email
@@ -143,7 +149,10 @@ struct ManualSignInView: View {
             try await authService.signInWithEmail(email: email, password: password)
             await MainActor.run {
                 isSigningIn = false
+                // Dismiss the manual sign-in view
                 dismiss()
+                // Call the success callback to dismiss parent LoginView
+                onSignInSuccess?()
             }
         } catch {
             await MainActor.run {

@@ -49,11 +49,30 @@ struct ProfileView: View {
     
     private var header: some View {
         VStack(spacing: 16) {
-            Image(systemName: "person.crop.circle.fill")
-                .font(.system(size: 80))
-                .foregroundStyle(.white.opacity(0.3))
+            // Avatar or placeholder
+            if let avatarUrl = authService.currentUser?.avatarUrl, !avatarUrl.isEmpty {
+                AsyncImage(url: URL(string: avatarUrl)) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    ProgressView()
+                        .tint(.white.opacity(0.6))
+                }
+                .frame(width: 80, height: 80)
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.2), lineWidth: 2)
+                )
+            } else {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 80))
+                    .foregroundStyle(.white.opacity(0.3))
+            }
             
-            Text(authService.effectiveUser.name ?? "Music Lover")
+            // Display nickname if available, otherwise name, otherwise "Music Lover"
+            Text(authService.currentUser?.nickname ?? authService.effectiveUser.name ?? "Music Lover")
                 .font(.title2)
                 .fontWeight(.semibold)
                 .foregroundStyle(.white)

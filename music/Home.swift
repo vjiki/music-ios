@@ -74,6 +74,17 @@ struct Home: View {
                 }
             }
         }
+        .onChange(of: authService.shouldNavigateToProfile) { _, shouldNavigate in
+            if shouldNavigate {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    currentTab = .profile
+                }
+                // Reset the flag after navigation
+                Task { @MainActor in
+                    authService.shouldNavigateToProfile = false
+                }
+            }
+        }
     }
     
     @ViewBuilder

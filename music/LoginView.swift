@@ -192,8 +192,18 @@ struct LoginView: View {
                 }
             }
             .sheet(isPresented: $showManualSignIn) {
-                ManualSignInView()
-                    .environmentObject(authService)
+                ManualSignInView(onSignInSuccess: {
+                    // Dismiss both ManualSignInView and LoginView when sign-in succeeds
+                    showManualSignIn = false
+                    dismiss()
+                })
+                .environmentObject(authService)
+            }
+            .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
+                // Dismiss LoginView when authentication succeeds
+                if isAuthenticated {
+                    dismiss()
+                }
             }
             .alert("Sign In Error", isPresented: $showAppleSignInError) {
                 Button("OK", role: .cancel) {

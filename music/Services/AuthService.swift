@@ -16,7 +16,33 @@ struct User {
     let id: String
     let email: String?
     let name: String?
+    let nickname: String?
+    let avatarUrl: String?
     let provider: AuthProvider
+}
+
+// MARK: - API Response Models
+struct AuthResponse: Codable {
+    let authenticated: Bool
+    let userId: String
+    let message: String
+}
+
+struct UserResponse: Codable {
+    let id: String
+    let email: String
+    let nickname: String?
+    let avatarUrl: String?
+    let accessLevel: String?
+    let isActive: Bool
+    let isVerified: Bool
+    let lastLoginAt: String?
+    let createdAt: String
+}
+
+struct AuthRequest: Codable {
+    let email: String
+    let password: String
 }
 
 enum AuthProvider: String, Codable {
@@ -41,6 +67,7 @@ protocol AuthServiceProtocol: ObservableObject {
 class AuthService: ObservableObject, AuthServiceProtocol {
     @Published private(set) var currentUser: User?
     @Published private(set) var isAuthenticated: Bool = false
+    @Published var shouldNavigateToProfile: Bool = false
     
     private let userDefaultsKey = "current_user"
     
@@ -53,7 +80,12 @@ class AuthService: ObservableObject, AuthServiceProtocol {
             return user
         }
         // Return guest user by default
-        return User(id: "guest", email: nil, name: "Guest", provider: .guest)
+        return User(id: "guest", email: nil, name: "Guest", nickname: nil, avatarUrl: nil, provider: .guest)
+    }
+    
+    // Base API URL - same as SongsService
+    private var baseURL: String {
+        return "https://music-back-g2u6.onrender.com"
     }
     
     func signInWithGoogle() async throws {
@@ -99,6 +131,8 @@ class AuthService: ObservableObject, AuthServiceProtocol {
             id: user.userID ?? UUID().uuidString,
             email: profile?.email,
             name: profile?.name,
+            nickname: profile?.name,
+            avatarUrl: profile?.imageURL(withDimension: 200)?.absoluteString,
             provider: .google
         )
         
@@ -126,6 +160,8 @@ class AuthService: ObservableObject, AuthServiceProtocol {
             id: authorization.user,
             email: authorization.email,
             name: authorization.fullName?.givenName,
+            nickname: authorization.fullName?.givenName,
+            avatarUrl: nil,
             provider: .apple
         )
         
@@ -137,8 +173,7 @@ class AuthService: ObservableObject, AuthServiceProtocol {
     }
     
     func signInWithEmail(email: String, password: String) async throws {
-        // For now, this is a simple validation
-        // In a real app, you would make an API call to your backend
+        // Basic validation
         guard !email.isEmpty, !password.isEmpty else {
             throw AuthError.invalidCredentials
         }
@@ -150,26 +185,64 @@ class AuthService: ObservableObject, AuthServiceProtocol {
             throw AuthError.invalidEmail
         }
         
-        // For demo purposes, accept any password with length >= 6
-        // In production, this would authenticate against your backend
-        guard password.count >= 6 else {
-            throw AuthError.weakPassword
+        // Step 1: Authenticate with email and password
+        let authURL = URL(string: "\(baseURL)/api/v1/auth/authenticate")!
+        var request = URLRequest(url: authURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let authRequest = AuthRequest(email: email, password: password)
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(authRequest)
+        
+        let (authData, authResponse) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = authResponse as? HTTPURLResponse else {
+            throw AuthError.authenticationFailed
         }
         
-        // Simulate API call delay
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if httpResponse.statusCode == 401 {
+                throw AuthError.invalidCredentials
+            }
+            throw AuthError.authenticationFailed
+        }
         
-        // Create user from email
+        let decoder = JSONDecoder()
+        let authResult = try decoder.decode(AuthResponse.self, from: authData)
+        
+        guard authResult.authenticated else {
+            throw AuthError.authenticationFailed
+        }
+        
+        // Step 2: Get user information
+        let userURL = URL(string: "\(baseURL)/api/v1/users/\(authResult.userId)")!
+        var userRequest = URLRequest(url: userURL)
+        userRequest.httpMethod = "GET"
+        
+        let (userData, userResponse) = try await URLSession.shared.data(for: userRequest)
+        
+        guard let userHttpResponse = userResponse as? HTTPURLResponse,
+              (200...299).contains(userHttpResponse.statusCode) else {
+            throw AuthError.userInfoFailed
+        }
+        
+        let userResult = try decoder.decode(UserResponse.self, from: userData)
+        
+        // Create user from API response
         let authUser = User(
-            id: UUID().uuidString,
-            email: email,
-            name: email.components(separatedBy: "@").first,
+            id: userResult.id,
+            email: userResult.email,
+            name: userResult.nickname ?? userResult.email.components(separatedBy: "@").first,
+            nickname: userResult.nickname,
+            avatarUrl: userResult.avatarUrl,
             provider: .email
         )
         
         await MainActor.run {
             self.currentUser = authUser
             self.isAuthenticated = true
+            self.shouldNavigateToProfile = true
             saveUser(authUser)
         }
     }
@@ -183,6 +256,7 @@ class AuthService: ObservableObject, AuthServiceProtocol {
         await MainActor.run {
             self.currentUser = nil
             self.isAuthenticated = false
+            self.shouldNavigateToProfile = false
             clearUser()
         }
     }
@@ -221,6 +295,8 @@ enum AuthError: LocalizedError {
     case invalidCredentials
     case invalidEmail
     case weakPassword
+    case authenticationFailed
+    case userInfoFailed
     
     var errorDescription: String? {
         switch self {
@@ -236,6 +312,10 @@ enum AuthError: LocalizedError {
             return "Please enter a valid email address"
         case .weakPassword:
             return "Password must be at least 6 characters long"
+        case .authenticationFailed:
+            return "Authentication failed. Please check your credentials and try again."
+        case .userInfoFailed:
+            return "Failed to retrieve user information. Please try again."
         }
     }
 }
@@ -246,6 +326,8 @@ extension User: Codable {
         case id
         case email
         case name
+        case nickname
+        case avatarUrl
         case provider
     }
 }
