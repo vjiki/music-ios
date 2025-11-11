@@ -15,8 +15,10 @@ struct MusicStory: Identifiable {
     let song: SongsModel
     let timestamp: Date
     let isViewed: Bool
+    let storyImageURL: String? // imageUrl from API
+    let storyPreviewURL: String? // previewUrl from API
     
-    init(id: String = UUID().uuidString, userId: String, userName: String, profileImageURL: String? = nil, song: SongsModel, timestamp: Date = Date(), isViewed: Bool = false) {
+    init(id: String = UUID().uuidString, userId: String, userName: String, profileImageURL: String? = nil, song: SongsModel, timestamp: Date = Date(), isViewed: Bool = false, storyImageURL: String? = nil, storyPreviewURL: String? = nil) {
         self.id = id
         self.userId = userId
         self.userName = userName
@@ -24,6 +26,8 @@ struct MusicStory: Identifiable {
         self.song = song
         self.timestamp = timestamp
         self.isViewed = isViewed
+        self.storyImageURL = storyImageURL
+        self.storyPreviewURL = storyPreviewURL
     }
 }
 

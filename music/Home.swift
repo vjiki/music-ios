@@ -16,6 +16,7 @@ struct Home: View {
     }
     
     @State private var expandSheet = false
+    @State private var storyImageURL: String? = nil
     @Namespace private var animation
     @StateObject var songManager = SongManager()
     @StateObject var authService = AuthService()
@@ -27,7 +28,7 @@ struct Home: View {
     
     var body: some View {
         TabView(selection: $currentTab) {
-            HomeTabContent()
+            HomeTabContent(expandSheet: $expandSheet, animation: animation, storyImageURL: $storyImageURL)
                 .tag(Tab.home)
                 .environmentObject(songManager)
                 .environmentObject(authService)
@@ -68,7 +69,7 @@ struct Home: View {
                     Color.black
                         .ignoresSafeArea()
                     
-                    MusicView(expandSheet: $expandSheet, animation: animation)
+                    MusicView(expandSheet: $expandSheet, animation: animation, storyImageURL: storyImageURL)
                         .environmentObject(songManager)
                         .environmentObject(authService)
                 }
@@ -83,6 +84,12 @@ struct Home: View {
                 Task { @MainActor in
                     authService.shouldNavigateToProfile = false
                 }
+            }
+        }
+        .onChange(of: expandSheet) { _, isExpanded in
+            // Reset story image URL when MusicView is closed
+            if !isExpanded {
+                storyImageURL = nil
             }
         }
     }
@@ -163,8 +170,14 @@ struct Home: View {
 
 // MARK: - Home Tab Content
 private struct HomeTabContent: View {
+    @Binding var expandSheet: Bool
+    var animation: Namespace.ID
+    @Binding var storyImageURL: String?
+    
     @EnvironmentObject var songManager: SongManager
+    @EnvironmentObject var authService: AuthService
     @StateObject private var storyManager = StoryManager()
+    @StateObject private var storiesService = StoriesService()
     @State private var showStoryCreation = false
     @State private var showMessages = false
     
@@ -186,10 +199,16 @@ private struct HomeTabContent: View {
             .padding(.bottom, 200)
         }
         .background(Color.black.ignoresSafeArea())
-        .onAppear {
-            // Update stories when view appears
-            if !songManager.librarySongs.isEmpty {
-                storyManager.updateStories(from: songManager.librarySongs)
+        .task {
+            // Fetch stories from API when view appears
+            await fetchStoriesFromAPI()
+        }
+        .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
+            // Refetch stories when authentication state changes
+            if isAuthenticated {
+                Task {
+                    await fetchStoriesFromAPI()
+                }
             }
         }
         .sheet(isPresented: $showStoryCreation) {
@@ -197,6 +216,7 @@ private struct HomeTabContent: View {
         }
         .sheet(isPresented: $showMessages) {
             MessagesView()
+                .environmentObject(authService)
         }
     }
     
@@ -341,6 +361,25 @@ private struct HomeTabContent: View {
                     // Other stories
                     ForEach(storyManager.stories) { story in
                         StoryCircleView(story: story) {
+                            // Only open if song has audio URL
+                            guard !story.song.audio_url.isEmpty else {
+                                // Mark as viewed even if can't play
+                                storyManager.markStoryAsViewed(story.id)
+                                return
+                            }
+                            
+                            // Set the story image URL first
+                            storyImageURL = story.storyImageURL ?? story.storyPreviewURL
+                            
+                            // Play the song from the story
+                            songManager.playSong(story.song, in: [story.song])
+                            
+                            // Open MusicView with animation
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                expandSheet = true
+                            }
+                            
+                            // Mark story as viewed
                             storyManager.markStoryAsViewed(story.id)
                         }
                     }
@@ -573,6 +612,34 @@ private struct HomeTabContent: View {
             .safeAreaInsets.top ?? 0
         
         return keyWindow
+    }
+    
+    // Fetch stories from API
+    private func fetchStoriesFromAPI() async {
+        // Only fetch if user is authenticated
+        guard authService.isAuthenticated,
+              let currentUserId = authService.currentUser?.id else {
+            // Use fallback stories if not authenticated
+            if !songManager.librarySongs.isEmpty {
+                storyManager.updateStories(from: songManager.librarySongs)
+            }
+            return
+        }
+        
+        // Fetch followers for current user
+        var followers: [FollowerResponse] = []
+        do {
+            followers = try await storiesService.fetchFollowers(for: currentUserId)
+        } catch {
+            print("Failed to fetch followers: \(error.localizedDescription)")
+        }
+        
+        // Fetch stories from API
+        await storyManager.fetchStoriesFromAPI(
+            currentUserId: currentUserId,
+            followers: followers,
+            allSongs: songManager.librarySongs
+        )
     }
 }
 

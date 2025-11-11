@@ -9,7 +9,21 @@ import SwiftUI
 
 struct MessagesView: View {
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var authService: AuthService
+    
+    @StateObject private var messagesService = MessagesService()
+    @StateObject private var storiesService = StoriesService()
+    @State private var chats: [ChatResponse] = []
+    @State private var followers: [FollowerResponse] = []
+    @State private var isLoading: Bool = false
+    @State private var isLoadingFollowers: Bool = false
     @State private var searchText: String = ""
+    @State private var selectedChat: ChatResponse?
+    @State private var showChatView = false
+    
+    private var currentUserNickname: String {
+        authService.effectiveUser.nickname ?? authService.effectiveUser.name ?? "Guest"
+    }
     
     var body: some View {
         NavigationStack {
@@ -28,6 +42,156 @@ struct MessagesView: View {
             }
             .background(Color.black.ignoresSafeArea())
             .navigationBarHidden(true)
+            .task {
+                await loadChats()
+                await loadFollowers()
+            }
+            .sheet(isPresented: $showChatView) {
+                if let chat = selectedChat {
+                    ChatView(chat: chat)
+                        .environmentObject(authService)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Load Chats
+    private func loadChats() async {
+        guard let currentUserId = authService.currentUser?.id else {
+            return
+        }
+        
+        await MainActor.run {
+            isLoading = true
+        }
+        
+        do {
+            let fetchedChats = try await messagesService.fetchChats(for: currentUserId)
+            await MainActor.run {
+                // Sort by last message time (newest first)
+                chats = fetchedChats.sorted { chat1, chat2 in
+                    let date1 = parseDate(chat1.lastMessageAt ?? chat1.updatedAt) ?? Date.distantPast
+                    let date2 = parseDate(chat2.lastMessageAt ?? chat2.updatedAt) ?? Date.distantPast
+                    return date1 > date2
+                }
+                isLoading = false
+            }
+        } catch {
+            print("Failed to fetch chats: \(error.localizedDescription)")
+            await MainActor.run {
+                isLoading = false
+            }
+        }
+    }
+    
+    // MARK: - Load Followers
+    private func loadFollowers() async {
+        guard let currentUserId = authService.currentUser?.id else {
+            return
+        }
+        
+        await MainActor.run {
+            isLoadingFollowers = true
+        }
+        
+        do {
+            let fetchedFollowers = try await storiesService.fetchFollowers(for: currentUserId)
+            await MainActor.run {
+                followers = fetchedFollowers
+                isLoadingFollowers = false
+            }
+        } catch {
+            print("Failed to fetch followers: \(error.localizedDescription)")
+            await MainActor.run {
+                isLoadingFollowers = false
+            }
+        }
+    }
+    
+    // MARK: - Open Chat with Follower
+    private func openChatWithFollower(_ follower: FollowerResponse) async {
+        guard let currentUserId = authService.currentUser?.id else {
+            return
+        }
+        
+        // First, try to find an existing chat with this follower
+        let existingChat = chats.first { chat in
+            chat.participants.contains { $0.userId == follower.followerId }
+        }
+        
+        if let chat = existingChat {
+            await MainActor.run {
+                selectedChat = chat
+                showChatView = true
+            }
+        } else {
+            // Create a new chat response for the follower
+            var participants: [ChatParticipant] = [
+                ChatParticipant(
+                    userId: follower.followerId,
+                    userNickname: follower.followerNickname,
+                    userAvatarUrl: follower.followerAvatarUrl
+                )
+            ]
+            
+            // Add current user to participants
+            if let currentUser = authService.currentUser {
+                participants.append(
+                    ChatParticipant(
+                        userId: currentUser.id,
+                        userNickname: currentUser.nickname ?? currentUser.name ?? "You",
+                        userAvatarUrl: currentUser.avatarUrl
+                    )
+                )
+            }
+            
+            let newChat = ChatResponse(
+                chatId: UUID().uuidString, // Temporary ID, will be replaced by API
+                chatType: "DIRECT",
+                title: follower.followerNickname,
+                avatarUrl: follower.followerAvatarUrl,
+                lastMessagePreview: nil,
+                lastMessageAt: nil,
+                lastMessageSenderId: nil,
+                lastMessageSenderName: nil,
+                unreadCount: 0,
+                isMuted: false,
+                updatedAt: ISO8601DateFormatter().string(from: Date()),
+                participants: participants
+            )
+            
+            await MainActor.run {
+                selectedChat = newChat
+                showChatView = true
+            }
+        }
+    }
+    
+    private func parseDate(_ dateString: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: dateString)
+    }
+    
+    private func timeAgoString(from dateString: String?) -> String {
+        guard let dateString = dateString,
+              let date = parseDate(dateString) else {
+            return ""
+        }
+        
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+    
+    // MARK: - Filtered Chats
+    private var filteredChats: [ChatResponse] {
+        if searchText.isEmpty {
+            return chats
+        }
+        return chats.filter { chat in
+            chat.title.localizedCaseInsensitiveContains(searchText) ||
+            chat.participants.contains { $0.userNickname.localizedCaseInsensitiveContains(searchText) }
         }
     }
     
@@ -42,7 +206,7 @@ struct MessagesView: View {
                     .foregroundStyle(.white)
             }
             
-            Text("nezzabudka5")
+            Text(currentUserNickname)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.white)
             
@@ -90,32 +254,20 @@ struct MessagesView: View {
     private var notesSection: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 16) {
-                // Your note
-                NoteItem(
-                    profileImage: "person.crop.circle.fill",
-                    bubbleText: "What's on your playlist?",
-                    label: "Your note",
-                    showLocationOff: true
-                )
-                
-                // Other notes
-                NoteItem(
-                    profileImage: "person.crop.circle.fill",
-                    bubbleText: "🧛",
-                    label: "Anastasia Igna..."
-                )
-                
-                NoteItem(
-                    profileImage: "person.crop.circle.fill",
-                    bubbleText: "🎶 Алло Teliga",
-                    label: "Vlad Teliga"
-                )
-                
-                NoteItem(
-                    profileImage: "person.crop.circle.fill",
-                    bubbleText: "🌍",
-                    label: "World"
-                )
+                // Followers
+                if isLoadingFollowers {
+                    ProgressView()
+                        .tint(.white)
+                        .frame(width: 70, height: 70)
+                } else {
+                    ForEach(followers, id: \.followerId) { follower in
+                        FollowerNoteItem(follower: follower) {
+                            Task {
+                                await openChatWithFollower(follower)
+                            }
+                        }
+                    }
+                }
             }
             .padding(.horizontal, 16)
         }
@@ -151,56 +303,24 @@ struct MessagesView: View {
             
             // Messages list
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    MessageRow(
-                        profileImage: "person.crop.circle.fill",
-                        name: "Шахрух Саттаров",
-                        status: "2 new messages · 4h",
-                        hasUnread: true
-                    )
-                    
-                    MessageRow(
-                        profileImage: "person.crop.circle.fill",
-                        name: "Лампочка не выкручивается",
-                        status: "Active yesterday"
-                    )
-                    
-                    MessageRow(
-                        profileImage: "person.crop.circle.fill",
-                        name: "Galina Afonina",
-                        status: "Active 21m ago"
-                    )
-                    
-                    MessageRow(
-                        profileImage: "person.crop.circle.fill",
-                        name: "haz_coach",
-                        status: "Active 36m ago",
-                        hasStory: true
-                    )
-                    
-                    MessageRow(
-                        profileImage: "person.crop.circle.fill",
-                        name: "Deep",
-                        status: "Sent yesterday"
-                    )
-                    
-                    MessageRow(
-                        profileImage: "person.crop.circle.fill",
-                        name: "DJA",
-                        status: "Active 5h ago"
-                    )
-                    
-                    MessageRow(
-                        profileImage: "person.crop.circle.fill",
-                        name: "mihail.kuritsyn",
-                        status: "Active 5h ago"
-                    )
-                    
-                    MessageRow(
-                        profileImage: "person.crop.circle.fill",
-                        name: "Vjiki Losev",
-                        status: "Sent on Tuesday"
-                    )
+                if isLoading {
+                    ProgressView()
+                        .tint(.white)
+                        .padding(.top, 40)
+                } else if chats.isEmpty {
+                    Text("No messages yet")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .padding(.top, 40)
+                } else {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filteredChats) { chat in
+                            ChatRow(chat: chat, timeAgo: timeAgoString(from: chat.lastMessageAt ?? chat.updatedAt)) {
+                                selectedChat = chat
+                                showChatView = true
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -209,7 +329,7 @@ struct MessagesView: View {
 
 // MARK: - Note Item
 private struct NoteItem: View {
-    let profileImage: String
+    let profileImage: String?
     let bubbleText: String
     let label: String
     var showLocationOff: Bool = false
@@ -218,12 +338,26 @@ private struct NoteItem: View {
         VStack(spacing: 8) {
             ZStack(alignment: .top) {
                 // Profile image
-                Image(systemName: profileImage)
-                    .font(.system(size: 60))
-                    .foregroundStyle(.white.opacity(0.3))
+                if let avatarUrl = profileImage, !avatarUrl.isEmpty {
+                    AsyncImage(url: URL(string: avatarUrl)) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(.white.opacity(0.3))
+                    }
                     .frame(width: 70, height: 70)
-                    .background(Color.white.opacity(0.1))
                     .clipShape(Circle())
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 60))
+                        .foregroundStyle(.white.opacity(0.3))
+                        .frame(width: 70, height: 70)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Circle())
+                }
                 
                 // Bubble
                 if !bubbleText.isEmpty {
@@ -254,35 +388,71 @@ private struct NoteItem: View {
     }
 }
 
-// MARK: - Message Row
-private struct MessageRow: View {
-    let profileImage: String
-    let name: String
-    let status: String
-    var hasUnread: Bool = false
-    var hasStory: Bool = false
+// MARK: - Follower Note Item
+private struct FollowerNoteItem: View {
+    let follower: FollowerResponse
+    let onTap: () -> Void
     
     var body: some View {
-        Button {
-            // Open message
-        } label: {
+        Button(action: onTap) {
+            VStack(spacing: 8) {
+                // Profile image
+                if let avatarUrl = follower.followerAvatarUrl, !avatarUrl.isEmpty {
+                    AsyncImage(url: URL(string: avatarUrl)) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(.white.opacity(0.3))
+                    }
+                    .frame(width: 70, height: 70)
+                    .clipShape(Circle())
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 60))
+                        .foregroundStyle(.white.opacity(0.3))
+                        .frame(width: 70, height: 70)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Circle())
+                }
+                
+                Text(follower.followerNickname)
+                    .font(.caption)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
+            .frame(width: 80)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Chat Row
+private struct ChatRow: View {
+    let chat: ChatResponse
+    let timeAgo: String
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
             HStack(spacing: 12) {
                 // Profile image
-                ZStack {
-                    if hasStory {
-                        Circle()
-                            .stroke(
-                                LinearGradient(
-                                    colors: [Color.orange, Color.pink],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 2
-                            )
-                            .frame(width: 58, height: 58)
+                if let avatarUrl = chat.avatarUrl ?? chat.participants.first?.userAvatarUrl, !avatarUrl.isEmpty {
+                    AsyncImage(url: URL(string: avatarUrl)) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 50))
+                            .foregroundStyle(.white.opacity(0.3))
                     }
-                    
-                    Image(systemName: profileImage)
+                    .frame(width: 54, height: 54)
+                    .clipShape(Circle())
+                } else {
+                    Image(systemName: "person.crop.circle.fill")
                         .font(.system(size: 50))
                         .foregroundStyle(.white.opacity(0.3))
                         .frame(width: 54, height: 54)
@@ -292,22 +462,36 @@ private struct MessageRow: View {
                 
                 // Name and status
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(name)
+                    Text(chat.title)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     
-                    Text(status)
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        if let lastMessagePreview = chat.lastMessagePreview, !lastMessagePreview.isEmpty {
+                            Text(lastMessagePreview)
+                                .font(.system(size: 14, weight: .regular))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .lineLimit(1)
+                            
+                            if !timeAgo.isEmpty {
+                                Text("· \(timeAgo)")
+                                    .font(.system(size: 14, weight: .regular))
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                        } else if !timeAgo.isEmpty {
+                            Text(timeAgo)
+                                .font(.system(size: 14, weight: .regular))
+                                .foregroundStyle(.white.opacity(0.6))
+                        }
+                    }
                 }
                 
                 Spacer()
                 
                 // Unread indicator and camera
                 HStack(spacing: 12) {
-                    if hasUnread {
+                    if chat.unreadCount > 0 {
                         Circle()
                             .fill(Color.blue)
                             .frame(width: 8, height: 8)

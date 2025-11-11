@@ -16,6 +16,9 @@ struct MusicView: View {
     @State private var offsetY: CGFloat = 0
     @State private var showArtistView = false
     
+    // Optional story image URL (if opened from story)
+    var storyImageURL: String? = nil
+    
     @EnvironmentObject var songManager: SongManager
     
     var body: some View {
@@ -47,12 +50,9 @@ struct MusicView: View {
                 
                 VStack(spacing: 10) {
                     HStack(alignment: .top) {
-                        Image(systemName: "chevron.down")
-                            .imageScale(.large)
-                            .onTapGesture {
-                                expandSheet = false
-                                animateContent = false
-                            }
+                        // Placeholder for close button (will be in overlay)
+                        Color.clear
+                            .frame(width: 44, height: 44)
                         
                         Spacer()
                         
@@ -76,7 +76,9 @@ struct MusicView: View {
                     
                     GeometryReader {
                         let size = $0.size
-                        AsyncImage(url: URL(string: songManager.song.cover)) { img in
+                        // Use story image if available, otherwise use song cover
+                        let imageURL = storyImageURL ?? songManager.song.cover
+                        AsyncImage(url: URL(string: imageURL)) { img in
                             img.resizable()
                                 .scaledToFill()
                         } placeholder: {
@@ -99,31 +101,70 @@ struct MusicView: View {
                 .padding(.horizontal, 25)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
+            .overlay(alignment: .topLeading) {
+                // Close button in overlay to ensure it's always on top
+                // Aligned with the right button (ellipsis) which is at padding.top 80
+                Button {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        expandSheet = false
+                        animateContent = false
+                        offsetY = 0
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .imageScale(.large)
+                        .foregroundStyle(.white)
+                        .padding(12)
+                        .background(Color.black.opacity(0.7))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, safeArea.top + (safeArea.bottom == 0 ? 10 : 0) + 70)
+                .padding(.leading, 25)
+                .allowsHitTesting(true)
+            }
             .contentShape(Rectangle())
             .offset(y: offsetY)
             .gesture(
-                DragGesture()
+                DragGesture(minimumDistance: 10)
                     .onChanged( { value in
-                        let translationY = value.translation.height
-                        offsetY = (translationY > 0 ? translationY : 0)
-                        
+                        // Only handle drag if it's not in the top area (where close button is)
+                        // Check if drag started in the top 100 points
+                        if value.startLocation.y > 100 {
+                            let translationY = value.translation.height
+                            offsetY = (translationY > 0 ? translationY : 0)
+                        }
                     }).onEnded( { value in
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            if offsetY > size.height * 0.4 {
-                                expandSheet = false
-                                animateContent = false
-                            } else {
-                                offsetY = .zero
+                        // Only handle drag end if it started in the lower area
+                        if value.startLocation.y > 100 {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                if offsetY > size.height * 0.4 {
+                                    expandSheet = false
+                                    animateContent = false
+                                    offsetY = 0
+                                } else {
+                                    offsetY = 0
+                                }
                             }
                         }
                     })
-            ).ignoresSafeArea(.container, edges: .all)
+            )
+            .ignoresSafeArea(.container, edges: .all)
             
         }
         .edgesIgnoringSafeArea(.top)
         .onAppear() {
+            // Reset offset when view appears
+            offsetY = 0
             withAnimation(.easeInOut(duration: 0.35)) {
                 animateContent = true
+            }
+        }
+        .onChange(of: expandSheet) { _, isExpanded in
+            // Reset offset when view is closed
+            if !isExpanded {
+                offsetY = 0
+                animateContent = false
             }
         }
         .sheet(isPresented: $showArtistView) {
