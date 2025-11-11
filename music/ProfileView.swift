@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ProfileView: View {
     @EnvironmentObject var songManager: SongManager
+    @EnvironmentObject var authService: AuthService
     @State private var showSettings = false
     
     var body: some View {
@@ -41,6 +42,7 @@ struct ProfileView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
                     .environmentObject(songManager)
+                    .environmentObject(authService)
             }
         }
     }
@@ -51,10 +53,20 @@ struct ProfileView: View {
                 .font(.system(size: 80))
                 .foregroundStyle(.white.opacity(0.3))
             
-            Text("Music Lover")
+            Text(authService.effectiveUser.name ?? "Music Lover")
                 .font(.title2)
                 .fontWeight(.semibold)
                 .foregroundStyle(.white)
+            
+            if authService.isAuthenticated, let email = authService.currentUser?.email {
+                Text(email)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.6))
+            } else {
+                Text("Guest")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.6))
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
@@ -142,6 +154,7 @@ struct ProfileView: View {
 #Preview {
     ProfileView()
         .environmentObject(SongManager())
+        .environmentObject(AuthService())
         .preferredColorScheme(.dark)
 }
 

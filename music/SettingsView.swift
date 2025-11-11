@@ -10,8 +10,10 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var songManager: SongManager
+    @EnvironmentObject var authService: AuthService
     
     @State private var searchText = ""
+    @State private var showLoginView = false
     
     var body: some View {
         NavigationStack {
@@ -410,27 +412,37 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             SectionHeader(title: "Login")
             
-            Button {
-                // Add account action
-            } label: {
-                Text("Add account")
-                    .font(.body)
-                    .foregroundStyle(.blue)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+            if authService.isAuthenticated {
+                // User is logged in - show logout button
+                Button {
+                    Task {
+                        await authService.signOut()
+                    }
+                } label: {
+                    Text("Log out")
+                        .font(.body)
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
+            } else {
+                // User is not logged in - show add account button
+                Button {
+                    showLoginView = true
+                } label: {
+                    Text("Add account")
+                        .font(.body)
+                        .foregroundStyle(.blue)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
             }
-            
-            Button {
-                // Log out action
-            } label: {
-                Text("Log out")
-                    .font(.body)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-            }
+        }
+        .sheet(isPresented: $showLoginView) {
+            LoginView()
+                .environmentObject(authService)
         }
     }
 }
@@ -523,5 +535,6 @@ private struct SettingsRow: View {
     SettingsView()
         .preferredColorScheme(.dark)
         .environmentObject(SongManager())
+        .environmentObject(AuthService())
 }
 

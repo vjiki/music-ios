@@ -330,7 +330,7 @@ struct MusicView: View {
 }
 
 #Preview {
-    ContentView()
+    Home()
         .preferredColorScheme(.dark)
 }
 

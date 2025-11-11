@@ -84,7 +84,7 @@ struct MusicInfo: View {
 }
 
 #Preview {
-    ContentView()
+    Home()
         .preferredColorScheme(.dark)
 }
 
