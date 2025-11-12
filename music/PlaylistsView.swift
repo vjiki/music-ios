@@ -195,7 +195,8 @@ private struct PlaylistDetailView: View {
                 PlaylistSongRow(
                     index: index + 1,
                     song: song,
-                    isActive: song.id == songManager.song.id
+                    isActive: song.id == songManager.song.id,
+                    songManager: songManager
                 )
                 .onTapGesture {
                     songManager.playSong(song, in: songs)
@@ -228,6 +229,7 @@ private struct PlaylistSongRow: View {
     let index: Int
     let song: SongsModel
     let isActive: Bool
+    let songManager: SongManager
     
     var body: some View {
         HStack(spacing: 16) {
@@ -262,10 +264,10 @@ private struct PlaylistSongRow: View {
             if isActive {
                 Image(systemName: "waveform.circle.fill")
                     .foregroundStyle(Color.blue)
-            } else if song.isFavourite {
+            } else if songManager.likedSongIDs.contains(song.id) {
                 Image(systemName: "heart.fill")
                     .foregroundStyle(.pink)
-            } else if song.isDisliked {
+            } else if songManager.dislikedSongIDs.contains(song.id) {
                 Image(systemName: "heart.slash.fill")
                     .foregroundStyle(.red)
             }

@@ -22,6 +22,7 @@ class SongManager: ObservableObject {
     private let preferenceManager: PreferenceManagerProtocol
     private let nowPlayingService: NowPlayingServiceProtocol
     private let songsService: SongsServiceProtocol
+    private var authService: AuthService?
     
     // MARK: - Published Properties
     @Published private(set) var song: SongsModel = SongsModel(artist: "", audio_url: "", cover: "", title: "")
@@ -85,13 +86,15 @@ class SongManager: ObservableObject {
         playlistManager: PlaylistManagerProtocol = PlaylistManager(),
         preferenceManager: PreferenceManagerProtocol = PreferenceManager(),
         nowPlayingService: NowPlayingServiceProtocol = NowPlayingService(),
-        songsService: SongsServiceProtocol = SongsService()
+        songsService: SongsServiceProtocol = SongsService(),
+        authService: AuthService? = nil
     ) {
         self.audioPlayer = audioPlayer
         self.playlistManager = playlistManager
         self.preferenceManager = preferenceManager
         self.nowPlayingService = nowPlayingService
         self.songsService = songsService
+        self.authService = authService
         
         // Initialize with songs from service (fallback to sampleSongs)
         self.librarySongs = songsService.songs
@@ -208,14 +211,32 @@ class SongManager: ObservableObject {
     
     func toggleLike() {
         guard !song.title.isEmpty else { return }
-        preferenceManager.toggleLike(song.id)
-        updateSongWithPreferences()
+        let userId = getCurrentUserId()
+        Task {
+            await preferenceManager.toggleLike(song.id, userId: userId)
+            await MainActor.run {
+                updateSongWithPreferences()
+            }
+        }
     }
     
     func toggleDislike() {
         guard !song.title.isEmpty else { return }
-        preferenceManager.toggleDislike(song.id)
-        updateSongWithPreferences()
+        let userId = getCurrentUserId()
+        Task {
+            await preferenceManager.toggleDislike(song.id, userId: userId)
+            await MainActor.run {
+                updateSongWithPreferences()
+            }
+        }
+    }
+    
+    private func getCurrentUserId() -> String? {
+        return authService?.currentUser?.id
+    }
+    
+    func setAuthService(_ authService: AuthService) {
+        self.authService = authService
     }
     
     func songs(for kind: PlaylistKind) -> [SongsModel] {
@@ -294,6 +315,15 @@ class SongManager: ObservableObject {
         currentTime = 0
         duration = 0
         
+        // Check song like status from API when song starts playing
+        let userId = getCurrentUserId()
+        Task {
+            await preferenceManager.checkSongLikeStatus(currentSong.id, userId: userId)
+            await MainActor.run {
+                updateSongWithPreferences(currentSong)
+            }
+        }
+        
         guard let url = URL(string: currentSong.audio_url), !currentSong.audio_url.isEmpty else {
             return
         }
@@ -314,18 +344,9 @@ class SongManager: ObservableObject {
     }
     
     private func updateSongWithPreferences(_ song: SongsModel? = nil) {
-        let targetSong = song ?? self.song
-        var updatedSong = targetSong
-        updatedSong.isFavourite = preferenceManager.isLiked(targetSong.id)
-        updatedSong.isDisliked = preferenceManager.isDisliked(targetSong.id)
-        
-        if let index = playlist.firstIndex(where: { $0.id == targetSong.id }) {
-            playlist[index] = updatedSong
-        }
-        
-        if targetSong.id == self.song.id {
-            self.song = updatedSong
-        }
+        // Preferences are now managed through PreferenceManager
+        // No need to update song properties as they are checked dynamically
+        // This method is kept for potential future use
     }
     
     private func syncLibrary(with song: SongsModel) {

@@ -18,8 +18,8 @@ struct Home: View {
     @State private var expandSheet = false
     @State private var storyImageURL: String? = nil
     @Namespace private var animation
-    @StateObject var songManager = SongManager()
     @StateObject var authService = AuthService()
+    @StateObject var songManager = SongManager(authService: nil) // Will be set in onAppear
     @State private var currentTab: Tab = .home
     
     init() {
@@ -91,6 +91,10 @@ struct Home: View {
             if !isExpanded {
                 storyImageURL = nil
             }
+        }
+        .onAppear {
+            // Set AuthService in SongManager
+            songManager.setAuthService(authService)
         }
     }
     

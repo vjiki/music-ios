@@ -14,17 +14,13 @@ struct SongsModel: Identifiable, Codable, Equatable {
     var audio_url: String
     var cover: String
     var title: String
-    var isFavourite: Bool = false
-    var isDisliked: Bool = false
     
-    init(id: String = UUID().uuidString, artist: String, audio_url: String, cover: String, title: String, isFavourite: Bool = false, isDisliked: Bool = false) {
+    init(id: String = UUID().uuidString, artist: String, audio_url: String, cover: String, title: String) {
         self.id = id
         self.artist = artist
         self.audio_url = audio_url
         self.cover = cover
         self.title = title
-        self.isFavourite = isFavourite
-        self.isDisliked = isDisliked
     }
 }
 
