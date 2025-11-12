@@ -85,7 +85,7 @@ private struct TrackRow: View {
         Button(action: onTap) {
             HStack(spacing: 12) {
                 // Album art
-                AsyncImage(url: URL(string: song.cover)) { image in
+                CachedAsyncImage(url: URL(string: song.cover)) { image in
                     image
                         .resizable()
                         .scaledToFill()

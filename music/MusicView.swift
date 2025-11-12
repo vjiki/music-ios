@@ -78,7 +78,7 @@ struct MusicView: View {
                         let size = $0.size
                         // Use story image if available, otherwise use song cover
                         let imageURL = storyImageURL ?? songManager.song.cover
-                        AsyncImage(url: URL(string: imageURL)) { img in
+                        CachedAsyncImage(url: URL(string: imageURL)) { img in
                             img.resizable()
                                 .scaledToFill()
                         } placeholder: {

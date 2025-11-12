@@ -567,7 +567,7 @@ private struct HomeTabContent: View {
                 HStack(spacing: 18) {
                     ForEach(songManager.librarySongs, id: \.id) { item in
                         VStack(alignment: .leading, spacing: 12) {
-                            AsyncImage(url: URL(string: item.cover)) { img in
+                            CachedAsyncImage(url: URL(string: item.cover)) { img in
                                 img.resizable()
                                     .scaledToFill()
                             } placeholder: {

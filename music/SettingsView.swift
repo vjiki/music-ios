@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var showLoginView = false
     @State private var showLogoutConfirmation = false
     @State private var isLoggingOut = false
+    @State private var showDataAndStorage = false
     
     var body: some View {
         NavigationStack {
@@ -301,6 +302,33 @@ struct SettingsView: View {
             
             SettingsRow(icon: "iphone", title: "Device permissions")
             SettingsRow(icon: "arrow.down.circle", title: "Archiving and downloading")
+            
+            // Data and Storage row with green icon
+            Button {
+                showDataAndStorage = true
+            } label: {
+                HStack(spacing: 16) {
+                    Image(systemName: "square.stack.3d.up.fill")
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(.green)
+                        .frame(width: 24, height: 24)
+                    
+                    Text("Data and Storage")
+                        .font(.body)
+                        .foregroundStyle(.white)
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            
             SettingsRow(icon: "person.circle", title: "Accessibility")
             SettingsRow(icon: "bubble.left.and.bubble.right", title: "Language and translations")
             SettingsRow(icon: "chart.bar", title: "Media quality")
@@ -497,6 +525,10 @@ struct SettingsView: View {
             if isAuthenticated {
                 showLoginView = false
             }
+        }
+        .sheet(isPresented: $showDataAndStorage) {
+            DataAndStorageView()
+                .environmentObject(songManager)
         }
         .confirmationDialog("Log Out", isPresented: $showLogoutConfirmation, titleVisibility: .visible) {
             Button("Log Out", role: .destructive) {

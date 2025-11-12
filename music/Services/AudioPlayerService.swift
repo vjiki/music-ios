@@ -72,7 +72,21 @@ class AudioPlayerService: AudioPlayerServiceProtocol {
     func load(url: URL) {
         cleanup()
         
-        let playerItem = AVPlayerItem(url: url)
+        // Check cache first
+        let cacheService = CacheService.shared
+        let finalURL: URL
+        
+        if let cachedURL = cacheService.getCachedAudioURL(url: url) {
+            finalURL = cachedURL
+        } else {
+            finalURL = url
+            // Cache audio in background
+            Task {
+                await cacheAudio(url: url)
+            }
+        }
+        
+        let playerItem = AVPlayerItem(url: finalURL)
         player = AVPlayer(playerItem: playerItem)
         
         addPlaybackObservers(for: playerItem)
@@ -80,6 +94,22 @@ class AudioPlayerService: AudioPlayerServiceProtocol {
         
         currentTime = 0
         duration = 0
+    }
+    
+    private func cacheAudio(url: URL) async {
+        let cacheService = CacheService.shared
+        
+        // Skip if already cached
+        if cacheService.hasCachedAudio(url: url) {
+            return
+        }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            cacheService.cacheAudio(url: url, data: data)
+        } catch {
+            print("Failed to cache audio: \(error.localizedDescription)")
+        }
     }
     
     func stop() {
