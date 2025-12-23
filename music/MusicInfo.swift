@@ -21,7 +21,7 @@ struct MusicInfo: View {
                     GeometryReader {
                         let size = $0.size
 
-                        AsyncImage(url: URL(string: songManager.song.cover)) { img in
+                        CachedAsyncImage(url: URL(string: songManager.song.cover)) { img in
                             img.resizable()
                                 .scaledToFill()
                         } placeholder: {

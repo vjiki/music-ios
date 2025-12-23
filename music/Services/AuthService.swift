@@ -80,7 +80,19 @@ class AuthService: ObservableObject, AuthServiceProtocol {
             return user
         }
         // Return guest user by default
-        return User(id: "guest", email: nil, name: "Guest", nickname: nil, avatarUrl: nil, provider: .guest)
+        return User(
+            id: "3762deba-87a9-482e-b716-2111232148ca",
+            email: "guest@example.com",
+            name: "Guest",
+            nickname: "Guest",
+            avatarUrl: nil,
+            provider: .guest
+        )
+    }
+    
+    // Get current user ID, defaulting to guest user if not logged in
+    var currentUserId: String {
+        currentUser?.id ?? "3762deba-87a9-482e-b716-2111232148ca"
     }
     
     // Base API URL - same as SongsService

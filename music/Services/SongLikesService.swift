@@ -7,17 +7,15 @@
 
 import Foundation
 
-// MARK: - API Response Models
-struct SongLikeStatusResponse: Codable {
-    let isLiked: Bool
-    let isDisliked: Bool
-    let likesCount: Int
-    let dislikesCount: Int
-}
-
+// MARK: - API Request Models
 struct SongLikeRequest: Codable {
-    let userId: String
     let songId: String
+    let userId: String
+    
+    enum CodingKeys: String, CodingKey {
+        case songId
+        case userId
+    }
 }
 
 // MARK: - Song Likes Service
@@ -31,67 +29,74 @@ class SongLikesService: ObservableObject {
     
     // MARK: - Like Song
     func likeSong(userId: String, songId: String) async throws {
+        // Verify parameters are not empty
+        guard !userId.isEmpty, !songId.isEmpty else {
+            print("Error: userId or songId is empty. userId: '\(userId)', songId: '\(songId)'")
+            throw SongLikesServiceError.likeFailed
+        }
+        
         let url = URL(string: "\(baseURL)/api/v1/song-likes/like")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let likeRequest = SongLikeRequest(userId: userId, songId: songId)
+        let likeRequest = SongLikeRequest(songId: songId, userId: userId)
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(likeRequest)
+        
+        // Debug: Print request body for verification
+        if let httpBody = request.httpBody,
+           let bodyString = String(data: httpBody, encoding: .utf8) {
+            print("Like API Request Body: \(bodyString)")
+        }
         
         let (_, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
+            print("Like API failed with status code: \((response as? HTTPURLResponse)?.statusCode ?? -1)")
             throw SongLikesServiceError.likeFailed
         }
     }
     
     // MARK: - Dislike Song
     func dislikeSong(userId: String, songId: String) async throws {
+        // Verify parameters are not empty
+        guard !userId.isEmpty, !songId.isEmpty else {
+            print("Error: userId or songId is empty. userId: '\(userId)', songId: '\(songId)'")
+            throw SongLikesServiceError.dislikeFailed
+        }
+        
         let url = URL(string: "\(baseURL)/api/v1/song-likes/dislike")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
-        let dislikeRequest = SongLikeRequest(userId: userId, songId: songId)
+        let dislikeRequest = SongLikeRequest(songId: songId, userId: userId)
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(dislikeRequest)
+        
+        // Debug: Print request body for verification
+        if let httpBody = request.httpBody,
+           let bodyString = String(data: httpBody, encoding: .utf8) {
+            print("Dislike API Request Body: \(bodyString)")
+        }
         
         let (_, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
+            print("Dislike API failed with status code: \((response as? HTTPURLResponse)?.statusCode ?? -1)")
             throw SongLikesServiceError.dislikeFailed
         }
     }
     
-    // MARK: - Get Song Like Status
-    func getSongLikeStatus(songId: String, userId: String) async throws -> SongLikeStatusResponse {
-        let url = URL(string: "\(baseURL)/api/v1/song-likes/song/\(songId)/user/\(userId)")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw SongLikesServiceError.fetchFailed
-        }
-        
-        let decoder = JSONDecoder()
-        let status = try decoder.decode(SongLikeStatusResponse.self, from: data)
-        
-        return status
-    }
 }
 
 // MARK: - Errors
 enum SongLikesServiceError: LocalizedError {
     case likeFailed
     case dislikeFailed
-    case fetchFailed
     
     var errorDescription: String? {
         switch self {
@@ -99,8 +104,6 @@ enum SongLikesServiceError: LocalizedError {
             return "Failed to like song"
         case .dislikeFailed:
             return "Failed to dislike song"
-        case .fetchFailed:
-            return "Failed to fetch song like status"
         }
     }
 }

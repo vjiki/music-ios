@@ -23,9 +23,10 @@ class SongManager: ObservableObject {
     private let nowPlayingService: NowPlayingServiceProtocol
     private let songsService: SongsServiceProtocol
     private var authService: AuthService?
+    private var refreshTask: Task<Void, Never>?
     
     // MARK: - Published Properties
-    @Published private(set) var song: SongsModel = SongsModel(artist: "", audio_url: "", cover: "", title: "")
+    @Published private(set) var song: SongsModel = SongsModel(artist: "", audio_url: "", cover: "", title: "", isLiked: false, isDisliked: false, likesCount: 0, dislikesCount: 0)
     @Published private(set) var playlist: [SongsModel] = []
     @Published private(set) var currentIndex: Int?
     @Published private(set) var isPlaying: Bool = false
@@ -36,9 +37,6 @@ class SongManager: ObservableObject {
     @Published private(set) var librarySongs: [SongsModel] = []
     
     // MARK: - Computed Properties
-    var likedSongIDs: Set<String> { preferenceManager.likedSongIDs }
-    var dislikedSongIDs: Set<String> { preferenceManager.dislikedSongIDs }
-    
     var progress: Double {
         guard duration > 0 else { return 0 }
         return currentTime / duration
@@ -65,11 +63,11 @@ class SongManager: ObservableObject {
     }
     
     var isCurrentSongLiked: Bool {
-        preferenceManager.isLiked(song.id)
+        preferenceManager.isLiked(song)
     }
     
     var isCurrentSongDisliked: Bool {
-        preferenceManager.isDisliked(song.id)
+        preferenceManager.isDisliked(song)
     }
     
     var likeIconName: String {
@@ -78,6 +76,28 @@ class SongManager: ObservableObject {
     
     var dislikeIconName: String {
         isCurrentSongDisliked ? "heart.slash.fill" : "heart.slash"
+    }
+    
+    // Calculate icon size based on like/dislike count
+    func iconSize(for count: Int, baseSize: CGFloat = 24) -> CGFloat {
+        if count >= 50 {
+            return baseSize * 1.4  // Max size at 50+
+        } else if count >= 30 {
+            return baseSize * 1.3  // Bigger at 30+
+        } else if count >= 20 {
+            return baseSize * 1.2  // Bigger at 20+
+        } else if count >= 10 {
+            return baseSize * 1.1  // Slightly bigger at 10+
+        }
+        return baseSize  // Default size
+    }
+    
+    var likeIconSize: CGFloat {
+        iconSize(for: song.likesCount)
+    }
+    
+    var dislikeIconSize: CGFloat {
+        iconSize(for: song.dislikesCount)
     }
     
     // MARK: - Initialization (Dependency Injection)
@@ -104,9 +124,26 @@ class SongManager: ObservableObject {
         
         // Fetch songs from API
         Task {
-            await songsService.fetchSongs()
+            let userId = authService?.currentUserId ?? "3762deba-87a9-482e-b716-2111232148ca"
+            await songsService.fetchSongs(userId: userId)
             await MainActor.run {
+                // Songs from API should have correct like/dislike information
                 self.librarySongs = songsService.songs
+            }
+        }
+        
+        // Start periodic refresh of songs to get updated like/dislike counts
+        startPeriodicRefresh()
+    }
+    
+    private func startPeriodicRefresh() {
+        refreshTask?.cancel()
+        refreshTask = Task { [weak self] in
+            // Refresh every 30 seconds to get updated like/dislike counts
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
+                guard !Task.isCancelled else { break }
+                await self?.refreshSongs()
             }
         }
     }
@@ -213,9 +250,18 @@ class SongManager: ObservableObject {
         guard !song.title.isEmpty else { return }
         let userId = getCurrentUserId()
         Task {
-            await preferenceManager.toggleLike(song.id, userId: userId)
+            let updatedSong = await preferenceManager.toggleLike(song, userId: userId)
             await MainActor.run {
-                updateSongWithPreferences()
+                // Update current song
+                song = updatedSong
+                // Update song in library
+                if let index = librarySongs.firstIndex(where: { $0.id == updatedSong.id }) {
+                    librarySongs[index] = updatedSong
+                }
+                // Update song in playlist
+                if let index = playlist.firstIndex(where: { $0.id == updatedSong.id }) {
+                    playlist[index] = updatedSong
+                }
             }
         }
     }
@@ -224,15 +270,24 @@ class SongManager: ObservableObject {
         guard !song.title.isEmpty else { return }
         let userId = getCurrentUserId()
         Task {
-            await preferenceManager.toggleDislike(song.id, userId: userId)
+            let updatedSong = await preferenceManager.toggleDislike(song, userId: userId)
             await MainActor.run {
-                updateSongWithPreferences()
+                // Update current song
+                song = updatedSong
+                // Update song in library
+                if let index = librarySongs.firstIndex(where: { $0.id == updatedSong.id }) {
+                    librarySongs[index] = updatedSong
+                }
+                // Update song in playlist
+                if let index = playlist.firstIndex(where: { $0.id == updatedSong.id }) {
+                    playlist[index] = updatedSong
+                }
             }
         }
     }
     
-    private func getCurrentUserId() -> String? {
-        return authService?.currentUser?.id
+    private func getCurrentUserId() -> String {
+        return authService?.currentUserId ?? "3762deba-87a9-482e-b716-2111232148ca"
     }
     
     func setAuthService(_ authService: AuthService) {
@@ -258,9 +313,36 @@ class SongManager: ObservableObject {
     }
     
     func refreshSongs() async {
-        await songsService.fetchSongs()
+        let userId = getCurrentUserId()
+        let currentSongId = song.id
+        await songsService.fetchSongs(userId: userId)
         await MainActor.run {
-            self.librarySongs = songsService.songs
+            // Merge new songs with existing to preserve current playback state
+            let newSongs = songsService.songs
+            var mergedSongs: [SongsModel] = []
+            
+            for newSong in newSongs {
+                if let existingIndex = librarySongs.firstIndex(where: { $0.id == newSong.id }) {
+                    // Update with new like/dislike counts from API
+                    let mergedSong = newSong
+                    mergedSongs.append(mergedSong)
+                    
+                    // Update current song if it's the same
+                    if currentSongId == newSong.id {
+                        // Update current song with latest like/dislike counts
+                        var updatedCurrentSong = song
+                        updatedCurrentSong.likesCount = newSong.likesCount
+                        updatedCurrentSong.dislikesCount = newSong.dislikesCount
+                        updatedCurrentSong.isLiked = newSong.isLiked
+                        updatedCurrentSong.isDisliked = newSong.isDisliked
+                        song = updatedCurrentSong
+                    }
+                } else {
+                    mergedSongs.append(newSong)
+                }
+            }
+            
+            self.librarySongs = mergedSongs
         }
     }
     
@@ -303,7 +385,6 @@ class SongManager: ObservableObject {
     private func startPlaybackAtCurrentIndex() {
         guard let currentSong = playlistManager.getCurrentSong() else { return }
         
-        updateSongWithPreferences(currentSong)
         syncLibrary(with: currentSong)
         
         song = currentSong
@@ -315,20 +396,14 @@ class SongManager: ObservableObject {
         currentTime = 0
         duration = 0
         
-        // Check song like status from API when song starts playing
-        let userId = getCurrentUserId()
-        Task {
-            await preferenceManager.checkSongLikeStatus(currentSong.id, userId: userId)
-            await MainActor.run {
-                updateSongWithPreferences(currentSong)
-            }
-        }
+        // Song like/dislike status is now included in the song response from backend
+        // No need to fetch separately
         
         guard let url = URL(string: currentSong.audio_url), !currentSong.audio_url.isEmpty else {
             return
         }
         
-        audioPlayer.load(url: url)
+        audioPlayer.load(url: url, title: currentSong.title, artist: currentSong.artist, coverURL: currentSong.cover)
         audioPlayer.play()
         updateNowPlayingInfo()
     }
@@ -343,14 +418,22 @@ class SongManager: ObservableObject {
         }
     }
     
-    private func updateSongWithPreferences(_ song: SongsModel? = nil) {
-        // Preferences are now managed through PreferenceManager
-        // No need to update song properties as they are checked dynamically
-        // This method is kept for potential future use
-    }
-    
     private func syncLibrary(with song: SongsModel) {
-        if !librarySongs.contains(where: { $0.id == song.id }) {
+        if let existingIndex = librarySongs.firstIndex(where: { $0.id == song.id }) {
+            let existingSong = librarySongs[existingIndex]
+            // Merge: prefer new song's like/dislike info if it has valid data, otherwise keep existing
+            var mergedSong = song
+            // If new song has default values but existing has real values, keep existing
+            if song.isLiked == false && song.isDisliked == false && 
+               song.likesCount == 0 && song.dislikesCount == 0 &&
+               (existingSong.isLiked || existingSong.isDisliked || existingSong.likesCount > 0 || existingSong.dislikesCount > 0) {
+                mergedSong.isLiked = existingSong.isLiked
+                mergedSong.isDisliked = existingSong.isDisliked
+                mergedSong.likesCount = existingSong.likesCount
+                mergedSong.dislikesCount = existingSong.dislikesCount
+            }
+            librarySongs[existingIndex] = mergedSong
+        } else {
             librarySongs.append(song)
         }
     }

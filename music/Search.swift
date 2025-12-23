@@ -111,6 +111,19 @@ private struct TrackRow: View {
                 
                 Spacer()
                 
+                // Like/dislike indicator
+                if song.isLiked {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.pink)
+                        .frame(width: 32, height: 32)
+                } else if song.isDisliked {
+                    Image(systemName: "heart.slash.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.red)
+                        .frame(width: 32, height: 32)
+                }
+                
                 // Options button
                 Button {
                     // Options action

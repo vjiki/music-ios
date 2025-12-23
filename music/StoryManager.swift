@@ -145,7 +145,11 @@ class StoryManager: ObservableObject {
                     artist: songArtist,
                     audio_url: "",
                     cover: storyResponse.previewUrl ?? "",
-                    title: songTitle
+                    title: songTitle,
+                    isLiked: false,
+                    isDisliked: false,
+                    likesCount: 0,
+                    dislikesCount: 0
                 )
             } else {
                 // Skip stories without song information

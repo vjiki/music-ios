@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E633CCB82EC4DF2400235D65 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E633CCB72EC4DF2400235D65 /* Assets.xcassets */; };
 		E63863B92EC2BBA10011B872 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = E6C8A2922EC2B71D00F52C2E /* GoogleSignIn */; };
 /* End PBXBuildFile section */
 
@@ -31,6 +32,7 @@
 		9197CB722E4F9EEB00304E8C /* music.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = music.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9197CB802E4F9EF100304E8C /* musicTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = musicTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9197CB8A2E4F9EF100304E8C /* musicUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = musicUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E633CCB72EC4DF2400235D65 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -93,6 +95,7 @@
 		9197CB692E4F9EEB00304E8C = {
 			isa = PBXGroup;
 			children = (
+				E633CCB72EC4DF2400235D65 /* Assets.xcassets */,
 				9197CB742E4F9EEB00304E8C /* music */,
 				9197CB832E4F9EF100304E8C /* musicTests */,
 				9197CB8D2E4F9EF100304E8C /* musicUITests */,
@@ -234,6 +237,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E633CCB82EC4DF2400235D65 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -416,6 +420,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = music/music.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -465,6 +470,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = music/music.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";

@@ -57,9 +57,7 @@ struct MessagesView: View {
     
     // MARK: - Load Chats
     private func loadChats() async {
-        guard let currentUserId = authService.currentUser?.id else {
-            return
-        }
+        let currentUserId = authService.currentUserId
         
         await MainActor.run {
             isLoading = true
@@ -86,9 +84,7 @@ struct MessagesView: View {
     
     // MARK: - Load Followers
     private func loadFollowers() async {
-        guard let currentUserId = authService.currentUser?.id else {
-            return
-        }
+        let currentUserId = authService.currentUserId
         
         await MainActor.run {
             isLoadingFollowers = true
@@ -110,9 +106,7 @@ struct MessagesView: View {
     
     // MARK: - Open Chat with Follower
     private func openChatWithFollower(_ follower: FollowerResponse) async {
-        guard let currentUserId = authService.currentUser?.id else {
-            return
-        }
+        let currentUserId = authService.currentUserId
         
         // First, try to find an existing chat with this follower
         let existingChat = chats.first { chat in

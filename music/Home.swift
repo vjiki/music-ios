@@ -21,6 +21,8 @@ struct Home: View {
     @StateObject var authService = AuthService()
     @StateObject var songManager = SongManager(authService: nil) // Will be set in onAppear
     @State private var currentTab: Tab = .home
+    @State private var showSearch = false
+    @State private var showPlaylists = false
     
     init() {
         UITabBar.appearance().isHidden = true
@@ -28,18 +30,8 @@ struct Home: View {
     
     var body: some View {
         TabView(selection: $currentTab) {
-            HomeTabContent(expandSheet: $expandSheet, animation: animation, storyImageURL: $storyImageURL)
+            HomeTabContent(expandSheet: $expandSheet, animation: animation, storyImageURL: $storyImageURL, showSearch: $showSearch, showPlaylists: $showPlaylists)
                 .tag(Tab.home)
-                .environmentObject(songManager)
-                .environmentObject(authService)
-            
-            Search(expandSheet: $expandSheet, animation: animation)
-                .tag(Tab.search)
-                .environmentObject(songManager)
-                .environmentObject(authService)
-            
-            PlaylistsView()
-                .tag(Tab.playlists)
                 .environmentObject(songManager)
                 .environmentObject(authService)
             
@@ -96,6 +88,16 @@ struct Home: View {
             // Set AuthService in SongManager
             songManager.setAuthService(authService)
         }
+        .sheet(isPresented: $showSearch) {
+            Search(expandSheet: $expandSheet, animation: animation)
+                .environmentObject(songManager)
+                .environmentObject(authService)
+        }
+        .sheet(isPresented: $showPlaylists) {
+            PlaylistsView()
+                .environmentObject(songManager)
+                .environmentObject(authService)
+        }
     }
     
     @ViewBuilder
@@ -124,8 +126,6 @@ struct Home: View {
         
         private let items: [TabItem] = [
             TabItem(tab: .home, icon: "house", selectedIcon: "house.fill"),
-            TabItem(tab: .search, icon: "magnifyingglass", selectedIcon: "magnifyingglass"),
-            TabItem(tab: .playlists, icon: "play.square", selectedIcon: "play.square.fill"),
             TabItem(tab: .profile, icon: "person.crop.circle", selectedIcon: "person.crop.circle.fill")
         ]
         
@@ -184,6 +184,8 @@ private struct HomeTabContent: View {
     @StateObject private var storiesService = StoriesService()
     @State private var showStoryCreation = false
     @State private var showMessages = false
+    @Binding var showSearch: Bool
+    @Binding var showPlaylists: Bool
     
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -285,17 +287,13 @@ private struct HomeTabContent: View {
         VStack(spacing: 12) {
             // Header with action buttons
             HStack(spacing: 16) {
-                Text("Music")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(.white)
-                    
-                    Spacer()
+                Spacer()
                     
                 Button {
                     songManager.toggleDislike()
                 } label: {
                     Image(systemName: songManager.isCurrentSongDisliked ? "heart.slash.fill" : "heart.slash")
-                        .font(.system(size: 24, weight: .regular))
+                        .font(.system(size: songManager.dislikeIconSize, weight: .regular))
                         .foregroundStyle(songManager.isCurrentSongDisliked ? .red : .white)
                 }
                 .buttonStyle(.plain)
@@ -304,7 +302,7 @@ private struct HomeTabContent: View {
                     songManager.toggleLike()
                 } label: {
                     Image(systemName: songManager.isCurrentSongLiked ? "heart.fill" : "heart")
-                        .font(.system(size: 24, weight: .regular))
+                        .font(.system(size: songManager.likeIconSize, weight: .regular))
                         .foregroundStyle(songManager.isCurrentSongLiked ? .red : .white)
                 }
                 .buttonStyle(.plain)
@@ -313,6 +311,24 @@ private struct HomeTabContent: View {
                     showMessages = true
                 } label: {
                     Image(systemName: "message")
+                        .font(.system(size: 24, weight: .regular))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                
+                Button {
+                    showSearch = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 24, weight: .regular))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                
+                Button {
+                    showPlaylists = true
+                } label: {
+                    Image(systemName: "music.note.list")
                         .font(.system(size: 24, weight: .regular))
                         .foregroundStyle(.white)
                 }
@@ -505,7 +521,7 @@ private struct HomeTabContent: View {
                             songManager.playSong(item, in: songManager.librarySongs)
                         } label: {
                             HStack(spacing: 14) {
-                            AsyncImage(url: URL(string: item.cover)) { img in
+                            CachedAsyncImage(url: URL(string: item.cover)) { img in
                                 img.resizable()
                                     .scaledToFill()
                             } placeholder: {
@@ -620,15 +636,8 @@ private struct HomeTabContent: View {
     
     // Fetch stories from API
     private func fetchStoriesFromAPI() async {
-        // Only fetch if user is authenticated
-        guard authService.isAuthenticated,
-              let currentUserId = authService.currentUser?.id else {
-            // Use fallback stories if not authenticated
-            if !songManager.librarySongs.isEmpty {
-                storyManager.updateStories(from: songManager.librarySongs)
-            }
-            return
-        }
+        // Always use current user ID (defaults to guest if not authenticated)
+        let currentUserId = authService.currentUserId
         
         // Fetch followers for current user
         var followers: [FollowerResponse] = []
@@ -678,7 +687,7 @@ private struct StoryCircleView: View {
                         .frame(width: 66, height: 66)
                     
                     if let profileImageURL = story.profileImageURL, !profileImageURL.isEmpty {
-                        AsyncImage(url: URL(string: profileImageURL)) { img in
+                        CachedAsyncImage(url: URL(string: profileImageURL)) { img in
                             img.resizable()
                                 .scaledToFill()
                         } placeholder: {
@@ -735,7 +744,7 @@ private struct StoryCreationView: View {
                                 dismiss()
                             } label: {
                                 VStack(spacing: 12) {
-                                    AsyncImage(url: URL(string: song.cover)) { img in
+                                    CachedAsyncImage(url: URL(string: song.cover)) { img in
                                         img.resizable()
                                             .scaledToFill()
                                     } placeholder: {

@@ -8,6 +8,18 @@
 import Foundation
 import SwiftUI
 
+// MARK: - Cache Metadata Models
+struct CachedAudioMetadata: Codable {
+    let url: String
+    let title: String
+    let artist: String
+    let coverURL: String?
+}
+
+struct CachedImageMetadata: Codable {
+    let url: String
+}
+
 class CacheService: ObservableObject {
     static let shared = CacheService()
     
@@ -19,6 +31,18 @@ class CacheService: ObservableObject {
     @Published private(set) var totalCacheSize: Double = 0.0 // GB
     @Published private(set) var imagesCacheSize: Double = 0.0 // GB
     @Published private(set) var audioCacheSize: Double = 0.0 // GB
+    
+    // Store metadata for cached items
+    private var imageMetadataMap: [String: CachedImageMetadata] = [:] // filename -> metadata
+    private var audioMetadataMap: [String: CachedAudioMetadata] = [:] // filename -> metadata
+    
+    private var imageMappingsURL: URL {
+        imagesCacheDirectory.appendingPathComponent("metadata.json")
+    }
+    
+    private var audioMappingsURL: URL {
+        audioCacheDirectory.appendingPathComponent("metadata.json")
+    }
     
     private init() {
         // Get cache directory
@@ -48,6 +72,13 @@ class CacheService: ObservableObject {
         let fileName = url.absoluteString.md5 + ".jpg"
         let fileURL = imagesCacheDirectory.appendingPathComponent(fileName)
         
+        // Store metadata for easier lookup (thread-safe)
+        let metadata = CachedImageMetadata(url: url.absoluteString)
+        Task { @MainActor in
+            imageMetadataMap[fileName] = metadata
+            await saveImageMappings()
+        }
+        
         try? data.write(to: fileURL)
         
         Task {
@@ -73,9 +104,21 @@ class CacheService: ObservableObject {
     }
     
     // MARK: - Audio Caching
-    func cacheAudio(url: URL, data: Data) {
+    func cacheAudio(url: URL, data: Data, title: String? = nil, artist: String? = nil, coverURL: String? = nil) {
         let fileName = url.absoluteString.md5 + ".mp3"
         let fileURL = audioCacheDirectory.appendingPathComponent(fileName)
+        
+        // Store metadata with song information (thread-safe)
+        let metadata = CachedAudioMetadata(
+            url: url.absoluteString,
+            title: title ?? "Unknown Song",
+            artist: artist ?? "Unknown Artist",
+            coverURL: coverURL
+        )
+        Task { @MainActor in
+            audioMetadataMap[fileName] = metadata
+            await saveAudioMappings()
+        }
         
         try? data.write(to: fileURL)
         
@@ -137,9 +180,24 @@ class CacheService: ObservableObject {
     
     // MARK: - Clear Cache
     func clearAllCache() async {
+        // Clear mappings first
+        await MainActor.run {
+            imageMetadataMap.removeAll()
+            audioMetadataMap.removeAll()
+        }
+        
+        // Clear directories
         await clearDirectory(url: imagesCacheDirectory)
         await clearDirectory(url: audioCacheDirectory)
+        
+        // Recalculate cache size (should be 0 now)
         await calculateCacheSize()
+        
+        // Ensure mappings are empty
+        await MainActor.run {
+            imageMetadataMap.removeAll()
+            audioMetadataMap.removeAll()
+        }
     }
     
     func clearImagesCache() async {
@@ -152,17 +210,93 @@ class CacheService: ObservableObject {
         await calculateCacheSize()
     }
     
+    // MARK: - Clear Individual Items
+    func clearCachedImage(url: URL) async {
+        let fileName = url.absoluteString.md5 + ".jpg"
+        let fileURL = imagesCacheDirectory.appendingPathComponent(fileName)
+        
+        // Remove from mappings
+        await MainActor.run {
+            imageMetadataMap.removeValue(forKey: fileName)
+        }
+        await saveImageMappings()
+        
+        // Remove file
+        try? fileManager.removeItem(at: fileURL)
+        
+        // Recalculate cache size
+        await calculateCacheSize()
+    }
+    
+    func clearCachedAudio(url: URL) async {
+        let fileName = url.absoluteString.md5 + ".mp3"
+        let fileURL = audioCacheDirectory.appendingPathComponent(fileName)
+        
+        // Remove from mappings
+        await MainActor.run {
+            audioMetadataMap.removeValue(forKey: fileName)
+        }
+        await saveAudioMappings()
+        
+        // Remove file
+        try? fileManager.removeItem(at: fileURL)
+        
+        // Recalculate cache size
+        await calculateCacheSize()
+    }
+    
     private func clearDirectory(url: URL) async {
-        guard let enumerator = fileManager.enumerator(
+        // Get all files first (including subdirectories)
+        var filesToRemove: [URL] = []
+        
+        if let enumerator = fileManager.enumerator(
             at: url,
-            includingPropertiesForKeys: nil,
+            includingPropertiesForKeys: [.isDirectoryKey],
             options: [.skipsHiddenFiles]
-        ) else {
-            return
+        ) {
+            for case let fileURL as URL in enumerator {
+                filesToRemove.append(fileURL)
+            }
         }
         
-        for case let fileURL as URL in enumerator {
-            try? fileManager.removeItem(at: fileURL)
+        // Also get direct children
+        if let directChildren = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
+            filesToRemove.append(contentsOf: directChildren)
+        }
+        
+        // Remove all files
+        for fileURL in filesToRemove {
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory) {
+                do {
+                    try fileManager.removeItem(at: fileURL)
+                } catch {
+                    print("Failed to remove \(fileURL.lastPathComponent): \(error.localizedDescription)")
+                }
+            }
+        }
+        
+        // Clear mappings
+        if url == imagesCacheDirectory {
+            await MainActor.run {
+                imageMetadataMap.removeAll()
+            }
+        } else if url == audioCacheDirectory {
+            await MainActor.run {
+                audioMetadataMap.removeAll()
+            }
+        }
+        
+        // Wait a bit for file system to update
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        
+        // Verify directory is empty and recreate if needed
+        if let remainingFiles = try? fileManager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil),
+           !remainingFiles.isEmpty {
+            // Try to remove remaining files again
+            for fileURL in remainingFiles {
+                try? fileManager.removeItem(at: fileURL)
+            }
         }
     }
     
@@ -205,6 +339,180 @@ class CacheService: ObservableObject {
         }
         
         return CacheData(totalSize: totalSize, categories: categories)
+    }
+    
+    // MARK: - Get Cached Items
+    func getCachedImageMetadata() async -> [CachedImageMetadata] {
+        // Always reload from disk to get current state
+        await loadImageURLMappings(force: true)
+        return await MainActor.run {
+            Array(imageMetadataMap.values)
+        }
+    }
+    
+    func getCachedAudioMetadata() async -> [CachedAudioMetadata] {
+        // Always reload from disk to get current state
+        await loadAudioURLMappings(force: true)
+        return await MainActor.run {
+            Array(audioMetadataMap.values)
+        }
+    }
+    
+    // Legacy methods for backward compatibility
+    func getCachedImageURLs() async -> [String] {
+        let metadata = await getCachedImageMetadata()
+        return metadata.map { $0.url }
+    }
+    
+    func getCachedAudioURLs() async -> [String] {
+        let metadata = await getCachedAudioMetadata()
+        return metadata.map { $0.url }
+    }
+    
+    // Force reload mappings from disk (used after clearing cache)
+    func reloadMappings() async {
+        await MainActor.run {
+            imageMetadataMap.removeAll()
+            audioMetadataMap.removeAll()
+        }
+    }
+    
+    private func loadImageURLMappings(force: Bool = false) async {
+        if !force {
+            let isEmpty = await MainActor.run {
+                return imageMetadataMap.isEmpty
+            }
+            guard isEmpty else { return }
+        }
+        
+        // Clear existing mappings if forcing reload
+        if force {
+            await MainActor.run {
+                imageMetadataMap.removeAll()
+            }
+        }
+        
+        // Try to load from persisted metadata file first
+        if let data = try? Data(contentsOf: imageMappingsURL),
+           let mappings = try? JSONDecoder().decode([String: CachedImageMetadata].self, from: data) {
+            await MainActor.run {
+                imageMetadataMap = mappings
+            }
+            return
+        }
+        
+        // Fallback: try to reconstruct from filenames (for backward compatibility)
+        guard let enumerator = fileManager.enumerator(
+            at: imagesCacheDirectory,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+        
+        var mappings: [String: CachedImageMetadata] = [:]
+        for case let fileURL as URL in enumerator {
+            let fileName = fileURL.lastPathComponent
+            // Skip metadata file
+            if fileName == "metadata.json" { continue }
+            // Try to extract URL from filename
+            if let range = fileName.range(of: "_", options: .backwards) {
+                let urlPart = String(fileName[range.upperBound...])
+                let originalURL = urlPart.replacingOccurrences(of: ".jpg", with: "")
+                mappings[fileName] = CachedImageMetadata(url: originalURL)
+            }
+        }
+        
+        await MainActor.run {
+            imageMetadataMap = mappings
+            // Save mappings for next time
+            Task {
+                await saveImageMappings()
+            }
+        }
+    }
+    
+    private func loadAudioURLMappings(force: Bool = false) async {
+        if !force {
+            let isEmpty = await MainActor.run {
+                return audioMetadataMap.isEmpty
+            }
+            guard isEmpty else { return }
+        }
+        
+        // Clear existing mappings if forcing reload
+        if force {
+            await MainActor.run {
+                audioMetadataMap.removeAll()
+            }
+        }
+        
+        // Try to load from persisted metadata file first
+        if let data = try? Data(contentsOf: audioMappingsURL),
+           let mappings = try? JSONDecoder().decode([String: CachedAudioMetadata].self, from: data) {
+            await MainActor.run {
+                audioMetadataMap = mappings
+            }
+            return
+        }
+        
+        // Fallback: try to reconstruct from filenames (for backward compatibility)
+        guard let enumerator = fileManager.enumerator(
+            at: audioCacheDirectory,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+        
+        var mappings: [String: CachedAudioMetadata] = [:]
+        for case let fileURL as URL in enumerator {
+            let fileName = fileURL.lastPathComponent
+            // Skip metadata file
+            if fileName == "metadata.json" { continue }
+            // Try to extract URL from filename
+            if let range = fileName.range(of: "_", options: .backwards) {
+                let urlPart = String(fileName[range.upperBound...])
+                let originalURL = urlPart.replacingOccurrences(of: ".mp3", with: "")
+                mappings[fileName] = CachedAudioMetadata(url: originalURL, title: "Unknown Song", artist: "Unknown Artist", coverURL: nil)
+            }
+        }
+        
+        await MainActor.run {
+            audioMetadataMap = mappings
+            // Save mappings for next time
+            Task {
+                await saveAudioMappings()
+            }
+        }
+    }
+    
+    private func saveImageMappings() async {
+        let mappings = await MainActor.run {
+            return imageMetadataMap
+        }
+        
+        if let data = try? JSONEncoder().encode(mappings) {
+            try? data.write(to: imageMappingsURL)
+        }
+    }
+    
+    private func saveAudioMappings() async {
+        let mappings = await MainActor.run {
+            return audioMetadataMap
+        }
+        
+        if let data = try? JSONEncoder().encode(mappings) {
+            try? data.write(to: audioMappingsURL)
+        }
+    }
+    
+    func getCachedImageURLsSync() -> [String] {
+        return Array(imageMetadataMap.values.map { $0.url })
+    }
+    
+    func getCachedAudioURLsSync() -> [String] {
+        return Array(audioMetadataMap.values.map { $0.url })
     }
 }
 

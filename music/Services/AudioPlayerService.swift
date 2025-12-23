@@ -17,7 +17,7 @@ protocol AudioPlayerServiceProtocol {
     func play()
     func pause()
     func seek(to time: TimeInterval)
-    func load(url: URL)
+    func load(url: URL, title: String?, artist: String?, coverURL: String?)
     func stop()
     
     var onTimeUpdate: ((TimeInterval) -> Void)? { get set }
@@ -69,7 +69,7 @@ class AudioPlayerService: AudioPlayerServiceProtocol {
         currentTime = clampedTime
     }
     
-    func load(url: URL) {
+    func load(url: URL, title: String? = nil, artist: String? = nil, coverURL: String? = nil) {
         cleanup()
         
         // Check cache first
@@ -80,9 +80,9 @@ class AudioPlayerService: AudioPlayerServiceProtocol {
             finalURL = cachedURL
         } else {
             finalURL = url
-            // Cache audio in background
+            // Cache audio in background with metadata
             Task {
-                await cacheAudio(url: url)
+                await cacheAudio(url: url, title: title, artist: artist, coverURL: coverURL)
             }
         }
         
@@ -96,7 +96,7 @@ class AudioPlayerService: AudioPlayerServiceProtocol {
         duration = 0
     }
     
-    private func cacheAudio(url: URL) async {
+    private func cacheAudio(url: URL, title: String?, artist: String?, coverURL: String?) async {
         let cacheService = CacheService.shared
         
         // Skip if already cached
@@ -106,7 +106,7 @@ class AudioPlayerService: AudioPlayerServiceProtocol {
         
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            cacheService.cacheAudio(url: url, data: data)
+            cacheService.cacheAudio(url: url, data: data, title: title, artist: artist, coverURL: coverURL)
         } catch {
             print("Failed to cache audio: \(error.localizedDescription)")
         }

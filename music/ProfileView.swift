@@ -51,7 +51,7 @@ struct ProfileView: View {
         VStack(spacing: 16) {
             // Avatar or placeholder
             if let avatarUrl = authService.currentUser?.avatarUrl, !avatarUrl.isEmpty {
-                AsyncImage(url: URL(string: avatarUrl)) { image in
+                CachedAsyncImage(url: URL(string: avatarUrl)) { image in
                     image
                         .resizable()
                         .scaledToFill()
@@ -114,7 +114,7 @@ struct ProfileView: View {
             } else {
                 ForEach(Array(songManager.likedSongs.prefix(5).enumerated()), id: \.element.id) { index, song in
                     HStack(spacing: 12) {
-                        AsyncImage(url: URL(string: song.cover)) { img in
+                        CachedAsyncImage(url: URL(string: song.cover)) { img in
                             img.resizable()
                                 .scaledToFill()
                         } placeholder: {
@@ -136,6 +136,13 @@ struct ProfileView: View {
                         }
                         
                         Spacer()
+                        
+                        // Like indicator (should always be true for liked songs, but show it anyway)
+                        if song.isLiked {
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundStyle(.pink)
+                        }
                     }
                     .padding(.vertical, 8)
                     .onTapGesture {

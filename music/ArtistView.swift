@@ -196,7 +196,7 @@ struct ArtistView: View {
             if let recentRelease = artistSongs.first {
                 HStack(spacing: 16) {
                     // Album artwork
-                    AsyncImage(url: URL(string: recentRelease.cover)) { image in
+                    CachedAsyncImage(url: URL(string: recentRelease.cover)) { image in
                         image
                             .resizable()
                             .scaledToFill()
@@ -314,6 +314,17 @@ private struct PopularTrackRow: View {
                 
                 Spacer()
                 
+                // Like/dislike indicator
+                if song.isLiked {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.pink)
+                } else if song.isDisliked {
+                    Image(systemName: "heart.slash.fill")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.red)
+                }
+                
                 // Active indicator
                 if isActive {
                     Image(systemName: "waveform.circle.fill")
@@ -340,7 +351,7 @@ private struct SongRow: View {
         Button(action: onTap) {
             HStack(spacing: 16) {
                 // Album artwork
-                AsyncImage(url: URL(string: song.cover)) { image in
+                CachedAsyncImage(url: URL(string: song.cover)) { image in
                     image
                         .resizable()
                         .scaledToFill()
@@ -365,6 +376,17 @@ private struct SongRow: View {
                 }
                 
                 Spacer()
+                
+                // Like/dislike indicator
+                if song.isLiked {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.pink)
+                } else if song.isDisliked {
+                    Image(systemName: "heart.slash.fill")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.red)
+                }
                 
                 // Active indicator
                 if isActive {

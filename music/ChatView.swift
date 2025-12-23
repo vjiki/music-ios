@@ -19,9 +19,7 @@ struct ChatView: View {
     @FocusState private var isTextFieldFocused: Bool
     
     private var otherParticipant: ChatParticipant? {
-        guard let currentUserId = authService.currentUser?.id else {
-            return chat.participants.first
-        }
+        let currentUserId = authService.currentUserId
         return chat.participants.first { $0.userId != currentUserId }
     }
     
@@ -51,7 +49,7 @@ struct ChatView: View {
                                     .padding(.top, 40)
                             } else {
                                 ForEach(messages) { message in
-                                    MessageBubble(message: message, isCurrentUser: message.senderId == authService.currentUser?.id)
+                                    MessageBubble(message: message, isCurrentUser: message.senderId == authService.currentUserId)
                                         .id(message.id)
                                 }
                             }
@@ -164,8 +162,8 @@ struct ChatView: View {
     
     // MARK: - Load Messages
     private func loadMessages() async {
-        guard let currentUserId = authService.currentUser?.id,
-              let otherUserId = otherParticipant?.userId else {
+        let currentUserId = authService.currentUserId
+        guard let otherUserId = otherParticipant?.userId else {
             return
         }
         

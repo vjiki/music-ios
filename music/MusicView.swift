@@ -290,10 +290,10 @@ struct MusicView: View {
             songManager.toggleDislike()
         }) {
             Image(systemName: songManager.dislikeIconName)
-                .font(.system(size: 20, weight: .medium))
+                .font(.system(size: songManager.iconSize(for: songManager.song.dislikesCount, baseSize: 20), weight: .medium))
                 .foregroundStyle(songManager.isCurrentSongDisliked ? Color.red : .gray)
         }
-        .accessibilityLabel(songManager.isCurrentSongDisliked ? "Remove dislike" : "Dislike song")
+        .accessibilityLabel("Dislike song")
     }
     
     @ViewBuilder
@@ -363,10 +363,10 @@ struct MusicView: View {
             songManager.toggleLike()
         }) {
             Image(systemName: songManager.likeIconName)
-                .font(.system(size: 20, weight: .medium))
+                .font(.system(size: songManager.iconSize(for: songManager.song.likesCount, baseSize: 20), weight: .medium))
                 .foregroundStyle(songManager.isCurrentSongLiked ? Color.pink : .gray)
         }
-        .accessibilityLabel(songManager.isCurrentSongLiked ? "Remove like" : "Like song")
+        .accessibilityLabel("Like song")
     }
 }
 

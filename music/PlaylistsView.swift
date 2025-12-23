@@ -9,45 +9,101 @@ import SwiftUI
 
 struct PlaylistsView: View {
     @EnvironmentObject var songManager: SongManager
+    @EnvironmentObject var authService: AuthService
+    
+    @StateObject private var playlistsService = PlaylistsService()
+    @State private var userPlaylists: [PlaylistResponse] = []
+    @State private var isLoading = false
     
     private let gridColumns: [GridItem] = [
-        GridItem(.adaptive(minimum: 170, maximum: 220), spacing: 20)
+        GridItem(.adaptive(minimum: 150, maximum: 180), spacing: 20)
     ]
     
     private var playlistCards: [PlaylistCard] {
-        PlaylistKind.allCases.map { kind in
+        var cards: [PlaylistCard] = []
+        
+        // Add default playlists (Liked/Disliked)
+        for kind in PlaylistKind.allCases {
             let songs = songManager.songs(for: kind)
-            return PlaylistCard(
+            // Use first song's cover if available
+            let coverUrl = songs.first?.cover.isEmpty == false ? songs.first?.cover : nil
+            cards.append(PlaylistCard(
                 kind: kind,
                 title: kind.displayTitle,
                 subtitle: subtitle(for: songs.count),
                 icon: kind.systemImageName,
                 gradient: kind.gradientColors,
-                songCount: songs.count
-            )
+                songCount: songs.count,
+                playlistId: nil,
+                coverUrl: coverUrl
+            ))
         }
+        
+        // Add user playlists from API (excluding default ones)
+        for playlist in userPlaylists where !playlist.isDefaultLikes && !playlist.isDefaultDislikes {
+            // Get cover from first song if coverUrl is empty
+            let coverUrl = playlist.coverUrl ?? playlist.songs?.first?.songCoverUrl
+            
+            cards.append(PlaylistCard(
+                kind: nil,
+                title: playlist.name,
+                subtitle: subtitle(for: playlist.songs?.count ?? 0),
+                icon: "music.note.list",
+                gradient: [Color.blue, Color.cyan],
+                songCount: playlist.songs?.count ?? 0,
+                playlistId: playlist.id,
+                coverUrl: coverUrl
+            ))
+        }
+        
+        return cards
     }
     
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
-                LazyVGrid(columns: gridColumns, spacing: 24) {
-                    ForEach(playlistCards) { card in
-                        NavigationLink(value: card.kind) {
-                            PlaylistTile(card: card)
+                if isLoading {
+                    ProgressView()
+                        .tint(.white)
+                        .padding(.top, 100)
+                } else {
+                    LazyVGrid(columns: gridColumns, spacing: 24) {
+                        ForEach(playlistCards) { card in
+                            if let kind = card.kind {
+                                NavigationLink(value: kind) {
+                                    PlaylistTile(card: card)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(card.songCount == 0)
+                                .opacity(card.songCount == 0 ? 0.45 : 1)
+                            } else if let playlistId = card.playlistId {
+                                NavigationLink(value: playlistId) {
+                                    PlaylistTile(card: card)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(card.songCount == 0)
+                                .opacity(card.songCount == 0 ? 0.45 : 1)
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .disabled(card.songCount == 0)
-                        .opacity(card.songCount == 0 ? 0.45 : 1)
                     }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 30)
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 30)
             }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle("Playlists")
+            .task {
+                await loadUserPlaylists()
+            }
             .navigationDestination(for: PlaylistKind.self) { kind in
                 PlaylistDetailView(kind: kind)
+            }
+            .navigationDestination(for: String.self) { playlistId in
+                if let playlist = userPlaylists.first(where: { $0.id == playlistId }) {
+                    UserPlaylistDetailView(playlist: playlist)
+                        .environmentObject(songManager)
+                        .environmentObject(authService)
+                }
             }
         }
     }
@@ -62,16 +118,60 @@ struct PlaylistsView: View {
             return "\(count) songs"
         }
     }
+    
+    private func loadUserPlaylists() async {
+        let userId = authService.currentUserId
+        
+        await MainActor.run {
+            isLoading = true
+        }
+        
+        do {
+            var playlists = try await playlistsService.fetchUserPlaylists(userId: userId)
+            
+            // Load songs for playlists without coverUrl to get cover images from first song
+            for index in playlists.indices {
+                if playlists[index].coverUrl == nil && playlists[index].songs == nil {
+                    do {
+                        let fullPlaylist = try await playlistsService.fetchPlaylist(playlistId: playlists[index].id)
+                        playlists[index] = fullPlaylist
+                    } catch {
+                        print("Failed to load songs for playlist \(playlists[index].id): \(error.localizedDescription)")
+                    }
+                }
+            }
+            
+            await MainActor.run {
+                userPlaylists = playlists
+                isLoading = false
+            }
+        } catch {
+            print("Failed to load playlists: \(error.localizedDescription)")
+            await MainActor.run {
+                isLoading = false
+            }
+        }
+    }
 }
 
 private struct PlaylistCard: Identifiable {
-    var id: PlaylistKind { kind }
-    let kind: PlaylistKind
+    var id: String {
+        if let kind = kind {
+            return kind.rawValue
+        } else if let playlistId = playlistId {
+            return playlistId
+        } else {
+            return UUID().uuidString
+        }
+    }
+    let kind: PlaylistKind?
     let title: String
     let subtitle: String
     let icon: String
     let gradient: [Color]
     let songCount: Int
+    let playlistId: String?
+    let coverUrl: String?
 }
 
 private struct PlaylistTile: View {
@@ -79,19 +179,43 @@ private struct PlaylistTile: View {
     
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: card.gradient,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay {
+            // Use cover image if available, otherwise use gradient
+            if let coverUrl = card.coverUrl, !coverUrl.isEmpty {
+                CachedAsyncImage(url: URL(string: coverUrl)) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: card.gradient,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+                .frame(height: 160)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .stroke(Color.white.opacity(0.08), lineWidth: 1)
                 }
-                .frame(height: 200)
+            } else {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: card.gradient,
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    }
+                    .frame(height: 160)
+            }
             
             VStack(alignment: .leading, spacing: 12) {
                 Image(systemName: card.icon)
@@ -158,20 +282,40 @@ private struct PlaylistDetailView: View {
     
     private var header: some View {
         HStack(alignment: .center, spacing: 18) {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: kind.gradientColors,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 86, height: 86)
-                .overlay {
-                    Image(systemName: kind.systemImageName)
-                        .font(.title)
-                        .foregroundStyle(.white)
+            // Use first song's cover if available, otherwise use gradient
+            if let firstSong = songs.first, !firstSong.cover.isEmpty {
+                CachedAsyncImage(url: URL(string: firstSong.cover)) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: kind.gradientColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                 }
+                .frame(width: 86, height: 86)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            } else {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: kind.gradientColors,
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 86, height: 86)
+                    .overlay {
+                        Image(systemName: kind.systemImageName)
+                            .font(.title)
+                            .foregroundStyle(.white)
+                    }
+            }
             
             VStack(alignment: .leading, spacing: 6) {
                 Text(kind.displayTitle)
@@ -225,7 +369,7 @@ private struct PlaylistDetailView: View {
     }
 }
 
-private struct PlaylistSongRow: View {
+struct PlaylistSongRow: View {
     let index: Int
     let song: SongsModel
     let isActive: Bool
@@ -238,7 +382,7 @@ private struct PlaylistSongRow: View {
                 .foregroundStyle(.white.opacity(0.6))
                 .frame(width: 28, alignment: .leading)
             
-            AsyncImage(url: URL(string: song.cover)) { image in
+            CachedAsyncImage(url: URL(string: song.cover)) { image in
                 image
                     .resizable()
                     .scaledToFill()
@@ -264,10 +408,10 @@ private struct PlaylistSongRow: View {
             if isActive {
                 Image(systemName: "waveform.circle.fill")
                     .foregroundStyle(Color.blue)
-            } else if songManager.likedSongIDs.contains(song.id) {
+            } else if song.isLiked {
                 Image(systemName: "heart.fill")
                     .foregroundStyle(.pink)
-            } else if songManager.dislikedSongIDs.contains(song.id) {
+            } else if song.isDisliked {
                 Image(systemName: "heart.slash.fill")
                     .foregroundStyle(.red)
             }
