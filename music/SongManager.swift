@@ -286,7 +286,7 @@ class SongManager: ObservableObject {
         }
     }
     
-    private func getCurrentUserId() -> String {
+    func getCurrentUserId() -> String {
         return authService?.currentUserId ?? "3762deba-87a9-482e-b716-2111232148ca"
     }
     
@@ -310,6 +310,12 @@ class SongManager: ObservableObject {
     
     func playPlaylist(_ kind: PlaylistKind) {
         playPlaylist(songs(for: kind))
+    }
+    
+    func updateSongInLibrary(_ updatedSong: SongsModel) {
+        if let index = librarySongs.firstIndex(where: { $0.id == updatedSong.id }) {
+            librarySongs[index] = updatedSong
+        }
     }
     
     func refreshSongs() async {

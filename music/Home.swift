@@ -10,6 +10,7 @@ import SwiftUI
 struct Home: View {
     enum Tab: Hashable, CaseIterable {
         case home
+        case samples
         case search
         case playlists
         case profile
@@ -35,6 +36,11 @@ struct Home: View {
                 .environmentObject(songManager)
                 .environmentObject(authService)
             
+            SamplesView()
+                .tag(Tab.samples)
+                .environmentObject(songManager)
+                .environmentObject(authService)
+            
             ProfileView()
                 .tag(Tab.profile)
                 .environmentObject(songManager)
@@ -43,7 +49,8 @@ struct Home: View {
         .background(Color.black.ignoresSafeArea())
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
-                if !songManager.song.title.isEmpty {
+                // Hide mini player on samples view
+                if !songManager.song.title.isEmpty && currentTab != .samples {
                     MiniPlayer()
                         .padding(.horizontal, 18)
                         .padding(.bottom, 8)
@@ -126,6 +133,7 @@ struct Home: View {
         
         private let items: [TabItem] = [
             TabItem(tab: .home, icon: "house", selectedIcon: "house.fill"),
+            TabItem(tab: .samples, icon: "play.rectangle.on.rectangle", selectedIcon: "play.rectangle.on.rectangle.fill"),
             TabItem(tab: .profile, icon: "person.crop.circle", selectedIcon: "person.crop.circle.fill")
         ]
         
