@@ -59,6 +59,11 @@ class SamplesAudioPlayer: NSObject, ObservableObject {
     func load(url: URL, song: SongsModel) {
         cleanup()
         
+        // Update current song FIRST on main thread to trigger UI updates immediately
+        Task { @MainActor in
+            self.currentSong = song
+        }
+        
         // Check cache first
         let cacheService = CacheService.shared
         let finalURL: URL
@@ -83,7 +88,6 @@ class SamplesAudioPlayer: NSObject, ObservableObject {
         addPlaybackObservers(for: playerItem)
         addPeriodicTimeObserver()
         
-        currentSong = song
         currentTime = 0
         duration = 0
     }
@@ -177,37 +181,41 @@ struct SamplesView: View {
                 Color.black.ignoresSafeArea()
                 
                 if !songs.isEmpty {
-                    ScrollViewReader { proxy in
-                        ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: 0) {
-                                ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                                    SampleCard(
-                                        song: song,
-                                        index: index,
-                                        currentIndex: $currentIndex,
-                                        totalSongs: songs.count,
-                                        currentPlayingSong: samplesPlayer.currentSong,
-                                        onVisible: { idx in
-                                            if idx != lastPlayedIndex {
-                                                currentIndex = idx
-                                                playSong(at: idx)
-                                                lastPlayedIndex = idx
-                                            }
-                                        }
-                                    )
-                                    .id(index)
-                                    .environmentObject(songManager)
-                                    .environmentObject(samplesPlayer)
-                                    .frame(width: geometry.size.width, height: geometry.size.height)
-                                }
+                    ZStack {
+                        TabView(selection: $currentIndex) {
+                            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                                SampleCard(
+                                    song: song,
+                                    index: index,
+                                    currentIndex: $currentIndex,
+                                    totalSongs: songs.count,
+                                    currentPlayingSongId: samplesPlayer.currentSong?.id
+                                )
+                                .tag(index)
+                                .environmentObject(songManager)
+                                .environmentObject(samplesPlayer)
+                                .frame(width: geometry.size.height, height: geometry.size.width)
+                                .rotationEffect(.degrees(90))
+                                .scaleEffect(x: 1, y: -1)
                             }
                         }
-                        .scrollTargetBehavior(.paging)
-                        .onAppear {
-                            if lastPlayedIndex == -1 {
-                                playSong(at: 0)
-                                lastPlayedIndex = 0
-                            }
+                        .tabViewStyle(.page(indexDisplayMode: .never))
+                        .indexViewStyle(.page(backgroundDisplayMode: .never))
+                        .rotationEffect(.degrees(90))
+                        .scaleEffect(x: 1, y: -1)
+                        .frame(width: geometry.size.height, height: geometry.size.width)
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .onChange(of: currentIndex) { oldValue, newValue in
+                        if newValue != lastPlayedIndex {
+                            playSong(at: newValue)
+                            lastPlayedIndex = newValue
+                        }
+                    }
+                    .onAppear {
+                        if lastPlayedIndex == -1 {
+                            playSong(at: 0)
+                            lastPlayedIndex = 0
                         }
                     }
                 } else {
@@ -229,33 +237,21 @@ struct SamplesView: View {
     
     private func playSong(at index: Int) {
         guard index >= 0 && index < songs.count else { return }
+        // Get the latest version from library to ensure correct cover and metadata
         let song = songs[index]
+        let latestSong = songManager.librarySongs.first(where: { $0.id == song.id }) ?? song
         
-        guard let url = URL(string: song.audio_url), !song.audio_url.isEmpty else { return }
+        guard let url = URL(string: latestSong.audio_url), !latestSong.audio_url.isEmpty else { return }
         
-        // Load and play song using separate player
-        samplesPlayer.load(url: url, song: song)
-        samplesPlayer.play()
-        
-        // Wait for duration to be available, then seek to middle
-        Task {
-            // Wait a bit for the audio to load
-            try? await Task.sleep(nanoseconds: 800_000_000) // 0.8 seconds
-            
-            // Try to get duration and seek to middle
-            var attempts = 0
-            while samplesPlayer.duration == 0 && attempts < 15 {
-                try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
-                attempts += 1
-            }
-            
-            if samplesPlayer.duration > 0 {
-                let middleTime = samplesPlayer.duration / 2
-                await MainActor.run {
-                    samplesPlayer.seek(to: middleTime)
-                }
-            }
+        // Update current song immediately on main thread to update UI synchronously
+        DispatchQueue.main.async {
+            samplesPlayer.currentSong = latestSong
         }
+        
+        // Load and play song using separate player with latest song data
+        // Play from the beginning (no seeking to middle)
+        samplesPlayer.load(url: url, song: latestSong)
+        samplesPlayer.play()
     }
 }
 
@@ -264,18 +260,17 @@ struct SampleCard: View {
     let index: Int
     @Binding var currentIndex: Int
     let totalSongs: Int
-    let currentPlayingSong: SongsModel?
-    let onVisible: (Int) -> Void
+    let currentPlayingSongId: String?
     
     @EnvironmentObject var songManager: SongManager
     @EnvironmentObject var samplesPlayer: SamplesAudioPlayer
     @State private var isLiked: Bool = false
     @State private var isDisliked: Bool = false
     
-    // Use current playing song if available, otherwise get latest from library
+    // Get the song to display - prioritize currently playing song if this card matches it
     private var displaySong: SongsModel {
-        // First check if there's a current playing song that matches
-        if let currentPlaying = currentPlayingSong, currentPlaying.id == song.id {
+        // Always use the currently playing song if this card matches it
+        if let currentPlaying = samplesPlayer.currentSong, currentPlaying.id == song.id {
             return currentPlaying
         }
         // Otherwise, get the latest version from library, or fallback to song prop
@@ -285,16 +280,20 @@ struct SampleCard: View {
         return song
     }
     
-    // Check if this is the currently playing song
+    // Check if this is the currently playing song - use both sources for reactivity
     private var isCurrentlyPlaying: Bool {
-        currentPlayingSong?.id == song.id
+        let currentId = currentPlayingSongId ?? samplesPlayer.currentSong?.id
+        return currentId == song.id
     }
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Full screen cover image - use displaySong to show correct cover
-                CachedAsyncImage(url: URL(string: displaySong.cover)) { image in
+                // Full screen cover image - show cover for currently playing song if this card matches it
+                // Note: geometry dimensions are swapped because we're in a rotated TabView
+                let coverToShow = isCurrentlyPlaying ? (samplesPlayer.currentSong?.cover ?? song.cover) : song.cover
+                
+                CachedAsyncImage(url: URL(string: coverToShow)) { image in
                     image
                         .resizable()
                         .scaledToFill()
@@ -314,6 +313,7 @@ struct SampleCard: View {
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
                 .clipped()
+                .ignoresSafeArea(.all)
                 
                 // Dark overlay for better text readability
                 LinearGradient(
@@ -329,56 +329,65 @@ struct SampleCard: View {
                     VStack(spacing: 24) {
                         Spacer()
                         
-                        // Like button
+                        // Like button - use current playing song if this is it
+                        let buttonSong = isCurrentlyPlaying ? (samplesPlayer.currentSong ?? song) : song
                         VStack(spacing: 8) {
                             Button {
                                 Task {
                                     let userId = songManager.getCurrentUserId()
                                     let preferenceManager = PreferenceManager()
-                                    let updatedSong = await preferenceManager.toggleLike(displaySong, userId: userId)
+                                    let updatedSong = await preferenceManager.toggleLike(buttonSong, userId: userId)
                                     // Update in library
                                     await MainActor.run {
                                         songManager.updateSongInLibrary(updatedSong)
+                                        // Update samplesPlayer currentSong if it's the same
+                                        if samplesPlayer.currentSong?.id == updatedSong.id {
+                                            samplesPlayer.currentSong = updatedSong
+                                        }
                                         isLiked = updatedSong.isLiked
                                     }
                                 }
                             } label: {
-                                Image(systemName: displaySong.isLiked ? "heart.fill" : "heart")
-                                    .font(.system(size: songManager.iconSize(for: displaySong.likesCount, baseSize: 28), weight: .medium))
-                                    .foregroundStyle(displaySong.isLiked ? .pink : .white)
+                                Image(systemName: buttonSong.isLiked ? "heart.fill" : "heart")
+                                    .font(.system(size: songManager.iconSize(for: buttonSong.likesCount, baseSize: 28), weight: .medium))
+                                    .foregroundStyle(buttonSong.isLiked ? .pink : .white)
                                     .frame(width: 56, height: 56)
                                     .background(Color.black.opacity(0.3))
                                     .clipShape(Circle())
                             }
                             
-                            Text("\(displaySong.likesCount)")
+                            Text("\(buttonSong.likesCount)")
                                 .font(.caption)
                                 .foregroundStyle(.white)
                         }
                         
-                        // Dislike button
+                        // Dislike button - use current playing song if this is it
                         VStack(spacing: 8) {
                             Button {
                                 Task {
                                     let userId = songManager.getCurrentUserId()
                                     let preferenceManager = PreferenceManager()
-                                    let updatedSong = await preferenceManager.toggleDislike(displaySong, userId: userId)
+                                    let updatedSong = await preferenceManager.toggleDislike(buttonSong, userId: userId)
                                     // Update in library
                                     await MainActor.run {
                                         songManager.updateSongInLibrary(updatedSong)
+                                        // Update samplesPlayer currentSong if it's the same
+                                        if samplesPlayer.currentSong?.id == updatedSong.id {
+                                            samplesPlayer.currentSong = updatedSong
+                                        }
                                         isDisliked = updatedSong.isDisliked
                                     }
                                 }
                             } label: {
-                                Image(systemName: displaySong.isDisliked ? "heart.slash.fill" : "heart.slash")
-                                    .font(.system(size: songManager.iconSize(for: displaySong.dislikesCount, baseSize: 28), weight: .medium))
-                                    .foregroundStyle(displaySong.isDisliked ? .red : .white)
+                                Image(systemName: buttonSong.isDisliked ? "heart.slash.fill" : "heart.slash")
+                                    .font(.system(size: songManager.iconSize(for: buttonSong.dislikesCount, baseSize: 28), weight: .medium))
+                                    .foregroundStyle(buttonSong.isDisliked ? .red : .white)
                                     .frame(width: 56, height: 56)
                                     .background(Color.black.opacity(0.3))
                                     .clipShape(Circle())
                             }
                             
-                            Text("\(displaySong.dislikesCount)")
+                            Text("\(buttonSong.dislikesCount)")
                                 .font(.caption)
                                 .foregroundStyle(.white)
                         }
@@ -405,65 +414,6 @@ struct SampleCard: View {
                     }
                     .padding(.trailing, 16)
                 }
-                
-                // Bottom song info - use displaySong
-                VStack {
-                    Spacer()
-                    
-                    HStack(spacing: 12) {
-                        // Album art thumbnail
-                        CachedAsyncImage(url: URL(string: displaySong.cover)) { image in
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        } placeholder: {
-                            Rectangle()
-                                .fill(Color.gray.opacity(0.3))
-                        }
-                        .frame(width: 60, height: 60)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        
-                        // Song info
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(displaySong.title)
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                            
-                            Text(displaySong.artist)
-                                .font(.system(size: 14, weight: .regular))
-                                .foregroundStyle(.white.opacity(0.8))
-                                .lineLimit(1)
-                        }
-                        
-                        Spacer()
-                        
-                        // More options button
-                        Button {
-                            // More options
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(.white)
-                                .frame(width: 40, height: 40)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.clear, Color.black.opacity(0.7)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                }
-            }
-            .onAppear {
-                // Check if this card is in the center of the screen
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    onVisible(index)
-                }
             }
         }
         .onAppear {
@@ -476,14 +426,18 @@ struct SampleCard: View {
                 isDisliked = song.isDisliked
             }
         }
-        .onChange(of: samplesPlayer.currentSong?.id) { oldValue, newValue in
-            // Update when the playing song changes
-            if newValue == song.id {
+        .onChange(of: samplesPlayer.currentSong) { oldValue, newValue in
+            // Force view refresh when current song changes - this ensures cover updates
+            // Update like/dislike state if this card matches
+            if newValue?.id == song.id {
                 if let librarySong = songManager.librarySongs.first(where: { $0.id == song.id }) {
                     isLiked = librarySong.isLiked
                     isDisliked = librarySong.isDisliked
                 }
             }
+        }
+        .onChange(of: samplesPlayer.currentSong?.id) { oldValue, newValue in
+            // Additional onChange to ensure view updates when song ID changes
         }
         .onChange(of: songManager.librarySongs) { oldValue, newValue in
             // Update when library songs change (e.g., after like/dislike)
