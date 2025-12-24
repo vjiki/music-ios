@@ -202,7 +202,10 @@ private struct HomeTabContent: View {
                     .padding(.top, getSafeAreaTop())
                     .padding(.bottom, 16)
                 
-                heroSection
+                DiscoverRow()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 24)
             
             TagsView()
             
@@ -232,63 +235,6 @@ private struct HomeTabContent: View {
             MessagesView()
                 .environmentObject(authService)
         }
-    }
-    
-    private var heroSection: some View {
-        ZStack {
-            RadialGradient(
-                colors: [
-                    Color(red: 0.98, green: 0.32, blue: 0.73),
-                    Color(red: 0.62, green: 0.18, blue: 0.94),
-                    Color(red: 0.13, green: 0.02, blue: 0.20)
-                ],
-                center: .center,
-                startRadius: 20,
-                endRadius: 400
-            )
-            .ignoresSafeArea()
-            
-            VStack(spacing: 28) {
-                Spacer()
-                
-                Button {
-                    if let first = songManager.librarySongs.first {
-                        songManager.playSong(first, in: songManager.librarySongs)
-                    }
-                } label: {
-                    VStack(spacing: 16) {
-                        Label {
-                            Text("My Vibe")
-                                .font(.system(size: 36, weight: .bold))
-                                .tracking(1.4)
-                        } icon: {
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 20, weight: .bold))
-                        }
-                        .foregroundStyle(.white)
-                        
-                        Text("Breathe with me")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 22)
-                            .padding(.vertical, 10)
-                            .background(Color.white.opacity(0.22), in: Capsule())
-                    }
-                }
-                .buttonStyle(.plain)
-                
-                Spacer()
-                
-                DiscoverRow()
-            }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 30)
-        }
-        .frame(height: 420)
-        .clipShape(RoundedRectangle(cornerRadius: 42, style: .continuous))
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .shadow(color: Color.purple.opacity(0.45), radius: 30, x: 0, y: 20)
     }
     
     private var instagramTopBar: some View {
@@ -420,6 +366,19 @@ private struct HomeTabContent: View {
     @ViewBuilder
     private func DiscoverRow() -> some View {
         HStack(spacing: 16) {
+            let myVibeSong = getMyVibeSong()
+            discoverCard(
+                title: "My Vibe",
+                subtitle: myVibeSong?.title ?? "Breathe with me",
+                icon: "play.fill"
+            ) {
+                if let song = myVibeSong {
+                    songManager.playSong(song, in: songManager.librarySongs)
+                } else if let first = songManager.librarySongs.first {
+                    songManager.playSong(first, in: songManager.librarySongs)
+                }
+            }
+            
             discoverCard(
                 title: "For You",
                 subtitle: "Tailored tracks",
@@ -439,6 +398,18 @@ private struct HomeTabContent: View {
                     songManager.playSong(randomSong, in: songManager.librarySongs.shuffled())
                 }
             }
+        }
+    }
+    
+    private func getMyVibeSong() -> SongsModel? {
+        guard !songManager.librarySongs.isEmpty else { return nil }
+        
+        // For authenticated users, get the most liked song
+        if authService.isAuthenticated {
+            return songManager.librarySongs.max(by: { $0.likesCount < $1.likesCount })
+        } else {
+            // For guest users, return the first song
+            return songManager.librarySongs.first
         }
     }
     

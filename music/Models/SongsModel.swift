@@ -14,6 +14,7 @@ struct SongsModel: Identifiable, Codable, Equatable {
     var audio_url: String
     var cover: String
     var title: String
+    var video_url: String?
     var isLiked: Bool
     var isDisliked: Bool
     var likesCount: Int
@@ -25,6 +26,7 @@ struct SongsModel: Identifiable, Codable, Equatable {
         case audio_url
         case cover
         case title
+        case video_url
         case isLiked
         case isDisliked
         case likesCount
@@ -37,6 +39,7 @@ struct SongsModel: Identifiable, Codable, Equatable {
         audio_url: String,
         cover: String,
         title: String,
+        video_url: String? = nil,
         isLiked: Bool = false,
         isDisliked: Bool = false,
         likesCount: Int = 0,
@@ -47,6 +50,7 @@ struct SongsModel: Identifiable, Codable, Equatable {
         self.audio_url = audio_url
         self.cover = cover
         self.title = title
+        self.video_url = video_url
         self.isLiked = isLiked
         self.isDisliked = isDisliked
         self.likesCount = likesCount

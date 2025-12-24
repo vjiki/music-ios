@@ -7,17 +7,24 @@
 
 import SwiftUI
 import AVFoundation
+import AVKit
 
-// Separate audio player for SamplesView
-class SamplesAudioPlayer: NSObject, ObservableObject {
+// Unified player for SamplesView that handles both audio and video
+class SamplesPlayer: NSObject, ObservableObject {
     private var player: AVPlayer?
     private var timeObserverToken: Any?
     private var playbackFinishedObserver: Any?
+    private var playerLayer: AVPlayerLayer?
+    private var hasStatusObserver: Bool = false
     
-    @Published var currentSong: SongsModel?
+    @Published var currentShort: ShortsModel?
     @Published var isPlaying: Bool = false
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
+    
+    var isVideo: Bool {
+        currentShort?.type == "SHORT_VIDEO"
+    }
     
     override init() {
         super.init()
@@ -56,58 +63,121 @@ class SamplesAudioPlayer: NSObject, ObservableObject {
         currentTime = clampedTime
     }
     
-    func load(url: URL, song: SongsModel) {
+    func load(short: ShortsModel) {
         cleanup()
         
-        // Update current song FIRST on main thread to trigger UI updates immediately
+        // Update current short FIRST on main thread to trigger UI updates immediately
         Task { @MainActor in
-            self.currentSong = song
+            self.currentShort = short
+        }
+        
+        let urlString: String?
+        if short.type == "SHORT_VIDEO", let videoUrl = short.video_url, !videoUrl.isEmpty {
+            urlString = videoUrl
+        } else if let audioUrl = short.audio_url, !audioUrl.isEmpty {
+            urlString = audioUrl
+        } else {
+            return
+        }
+        
+        guard let urlString = urlString, let url = URL(string: urlString) else {
+            return
         }
         
         // Check cache first
         let cacheService = CacheService.shared
         let finalURL: URL
         
-        if let cachedURL = cacheService.getCachedAudioURL(url: url) {
-            finalURL = cachedURL
+        if short.type == "SHORT_VIDEO" {
+            if let cachedURL = cacheService.getCachedVideoURL(url: url) {
+                finalURL = cachedURL
+            } else {
+                finalURL = url
+                // Cache video in background
+                Task {
+                    await cacheVideo(url: url, short: short)
+                }
+            }
         } else {
-            finalURL = url
-            // Cache audio in background
-            Task {
-                await cacheAudio(url: url, song: song)
+            if let cachedURL = cacheService.getCachedAudioURL(url: url) {
+                finalURL = cachedURL
+            } else {
+                finalURL = url
+                // Cache audio in background
+                Task {
+                    await cacheAudio(url: url, short: short)
+                }
             }
         }
         
         let playerItem = AVPlayerItem(url: finalURL)
         player = AVPlayer(playerItem: playerItem)
         
-        // Remove old observer if exists
-        currentPlayerItem?.removeObserver(self, forKeyPath: "duration")
+        // Configure player for video - loop playback
+        if short.type == "SHORT_VIDEO" {
+            player?.actionAtItemEnd = .none
+            // Loop video when it ends
+            NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: playerItem,
+                queue: .main
+            ) { [weak self] _ in
+                self?.player?.seek(to: .zero)
+                self?.player?.play()
+            }
+        }
+        
+        // Remove old observers if they exist
+        if let oldItem = currentPlayerItem {
+            oldItem.removeObserver(self, forKeyPath: "duration")
+            if hasStatusObserver {
+                oldItem.removeObserver(self, forKeyPath: "status")
+                hasStatusObserver = false
+            }
+        }
         
         currentPlayerItem = playerItem
         addPlaybackObservers(for: playerItem)
         addPeriodicTimeObserver()
         
+        // Observe player item status for video
+        if short.type == "SHORT_VIDEO" {
+            playerItem.addObserver(self, forKeyPath: "status", options: [.new], context: nil)
+            hasStatusObserver = true
+        }
+        
         currentTime = 0
         duration = 0
     }
     
-    private func cacheAudio(url: URL, song: SongsModel) async {
+    private func cacheAudio(url: URL, short: ShortsModel) async {
         let cacheService = CacheService.shared
         if cacheService.hasCachedAudio(url: url) { return }
         
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            cacheService.cacheAudio(url: url, data: data, title: song.title, artist: song.artist, coverURL: song.cover)
+            cacheService.cacheAudio(url: url, data: data, title: short.title ?? "Unknown", artist: short.artist ?? "Unknown", coverURL: short.cover)
         } catch {
             print("Failed to cache audio: \(error.localizedDescription)")
+        }
+    }
+    
+    private func cacheVideo(url: URL, short: ShortsModel) async {
+        let cacheService = CacheService.shared
+        if cacheService.hasCachedVideo(url: url) { return }
+        
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            cacheService.cacheVideo(url: url, data: data, title: short.title ?? "Unknown", artist: short.artist ?? "Unknown", coverURL: short.cover)
+        } catch {
+            print("Failed to cache video: \(error.localizedDescription)")
         }
     }
     
     func stop() {
         cleanup()
         isPlaying = false
-        currentSong = nil
+        currentShort = nil
     }
     
     private var currentPlayerItem: AVPlayerItem?
@@ -123,12 +193,22 @@ class SamplesAudioPlayer: NSObject, ObservableObject {
             playbackFinishedObserver = nil
         }
         
-        // Remove KVO observer
-        currentPlayerItem?.removeObserver(self, forKeyPath: "duration")
+        // Remove all observers for video looping
+        NotificationCenter.default.removeObserver(self)
+        
+        // Remove KVO observers safely
+        if let item = currentPlayerItem {
+            item.removeObserver(self, forKeyPath: "duration")
+            if hasStatusObserver {
+                item.removeObserver(self, forKeyPath: "status")
+                hasStatusObserver = false
+            }
+        }
         currentPlayerItem = nil
         
         player?.pause()
         player = nil
+        playerLayer = nil
     }
     
     private func addPeriodicTimeObserver() {
@@ -141,7 +221,6 @@ class SamplesAudioPlayer: NSObject, ObservableObject {
     
     private func addPlaybackObservers(for item: AVPlayerItem) {
         // Observe duration
-        let durationKeyPath = \AVPlayerItem.duration
         item.addObserver(self, forKeyPath: "duration", options: [.new], context: nil)
         
         // Observe playback finished
@@ -159,20 +238,72 @@ class SamplesAudioPlayer: NSObject, ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 self?.duration = item.duration.seconds
             }
+        } else if keyPath == "status", let item = object as? AVPlayerItem {
+            DispatchQueue.main.async { [weak self] in
+                if item.status == .readyToPlay {
+                    // Video is ready, start playing if it's a video
+                    if self?.currentShort?.type == "SHORT_VIDEO" {
+                        self?.player?.play()
+                        self?.isPlaying = true
+                    }
+                }
+            }
         } else {
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
         }
+    }
+    
+    func getPlayer() -> AVPlayer? {
+        return player
+    }
+}
+
+// Video Player View for fullscreen video playback
+struct VideoPlayerView: UIViewRepresentable {
+    let player: AVPlayer
+    
+    func makeUIView(context: Context) -> VideoPlayerContainerView {
+        let containerView = VideoPlayerContainerView()
+        let playerLayer = AVPlayerLayer(player: player)
+        playerLayer.videoGravity = .resizeAspectFill
+        containerView.layer.addSublayer(playerLayer)
+        containerView.playerLayer = playerLayer
+        
+        // Set initial frame
+        DispatchQueue.main.async {
+            playerLayer.frame = containerView.bounds
+        }
+        
+        return containerView
+    }
+    
+    func updateUIView(_ uiView: VideoPlayerContainerView, context: Context) {
+        // Update frame when view size changes
+        DispatchQueue.main.async {
+            uiView.playerLayer?.frame = uiView.bounds
+        }
+    }
+}
+
+// Container view to hold the player layer
+class VideoPlayerContainerView: UIView {
+    var playerLayer: AVPlayerLayer?
+    
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        playerLayer?.frame = bounds
     }
 }
 
 struct SamplesView: View {
     @EnvironmentObject var songManager: SongManager
-    @StateObject private var samplesPlayer = SamplesAudioPlayer()
+    @StateObject private var shortsService = ShortsService()
+    @StateObject private var samplesPlayer = SamplesPlayer()
     @State private var currentIndex: Int = 0
     @State private var lastPlayedIndex: Int = -1
     
-    private var songs: [SongsModel] {
-        songManager.librarySongs
+    private var shorts: [ShortsModel] {
+        shortsService.shorts
     }
     
     var body: some View {
@@ -180,16 +311,24 @@ struct SamplesView: View {
             ZStack {
                 Color.black.ignoresSafeArea()
                 
-                if !songs.isEmpty {
+                if shortsService.isLoading {
+                    VStack {
+                        ProgressView()
+                            .tint(.white)
+                        Text("Loading shorts...")
+                            .foregroundStyle(.white.opacity(0.7))
+                            .padding(.top, 16)
+                    }
+                } else if !shorts.isEmpty {
                     ZStack {
                         TabView(selection: $currentIndex) {
-                            ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                                SampleCard(
-                                    song: song,
+                            ForEach(Array(shorts.enumerated()), id: \.element.id) { index, short in
+                                ShortCard(
+                                    short: short,
                                     index: index,
                                     currentIndex: $currentIndex,
-                                    totalSongs: songs.count,
-                                    currentPlayingSongId: samplesPlayer.currentSong?.id
+                                    totalShorts: shorts.count,
+                                    currentPlayingShortId: samplesPlayer.currentShort?.id
                                 )
                                 .tag(index)
                                 .environmentObject(songManager)
@@ -208,25 +347,30 @@ struct SamplesView: View {
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .onChange(of: currentIndex) { oldValue, newValue in
                         if newValue != lastPlayedIndex {
-                            playSong(at: newValue)
+                            playShort(at: newValue)
                             lastPlayedIndex = newValue
                         }
                     }
                     .onAppear {
                         if lastPlayedIndex == -1 {
-                            playSong(at: 0)
+                            playShort(at: 0)
                             lastPlayedIndex = 0
                         }
                     }
                 } else {
                     VStack {
-                        ProgressView()
-                            .tint(.white)
-                        Text("Loading samples...")
+                        Text("No shorts available")
                             .foregroundStyle(.white.opacity(0.7))
                             .padding(.top, 16)
                     }
                 }
+            }
+        }
+        .onAppear {
+            // Fetch shorts when view appears
+            Task {
+                let userId = songManager.getCurrentUserId()
+                await shortsService.fetchShorts(userId: userId)
             }
         }
         .onDisappear {
@@ -235,92 +379,147 @@ struct SamplesView: View {
         }
     }
     
-    private func playSong(at index: Int) {
-        guard index >= 0 && index < songs.count else { return }
-        // Get the latest version from library to ensure correct cover and metadata
-        let song = songs[index]
-        let latestSong = songManager.librarySongs.first(where: { $0.id == song.id }) ?? song
+    private func playShort(at index: Int) {
+        guard index >= 0 && index < shorts.count else { return }
+        let short = shorts[index]
         
-        guard let url = URL(string: latestSong.audio_url), !latestSong.audio_url.isEmpty else { return }
+        // Load short (video will auto-play when ready, audio needs manual play)
+        samplesPlayer.load(short: short)
         
-        // Update current song immediately on main thread to update UI synchronously
-        DispatchQueue.main.async {
-            samplesPlayer.currentSong = latestSong
+        // For audio, play immediately. For video, it will play when ready
+        if short.type != "SHORT_VIDEO" {
+            samplesPlayer.play()
         }
-        
-        // Load and play song using separate player with latest song data
-        // Play from the beginning (no seeking to middle)
-        samplesPlayer.load(url: url, song: latestSong)
-        samplesPlayer.play()
     }
 }
 
-struct SampleCard: View {
-    let song: SongsModel
+struct ShortCard: View {
+    let short: ShortsModel
     let index: Int
     @Binding var currentIndex: Int
-    let totalSongs: Int
-    let currentPlayingSongId: String?
+    let totalShorts: Int
+    let currentPlayingShortId: String?
     
     @EnvironmentObject var songManager: SongManager
-    @EnvironmentObject var samplesPlayer: SamplesAudioPlayer
+    @EnvironmentObject var samplesPlayer: SamplesPlayer
     @State private var isLiked: Bool = false
     @State private var isDisliked: Bool = false
     
-    // Get the song to display - prioritize currently playing song if this card matches it
-    private var displaySong: SongsModel {
-        // Always use the currently playing song if this card matches it
-        if let currentPlaying = samplesPlayer.currentSong, currentPlaying.id == song.id {
+    // Get the short to display - prioritize currently playing short if this card matches it
+    private var displayShort: ShortsModel {
+        // Always use the currently playing short if this card matches it
+        if let currentPlaying = samplesPlayer.currentShort, currentPlaying.id == short.id {
             return currentPlaying
         }
-        // Otherwise, get the latest version from library, or fallback to song prop
-        if let librarySong = songManager.librarySongs.first(where: { $0.id == song.id }) {
-            return librarySong
-        }
-        return song
+        return short
     }
     
-    // Check if this is the currently playing song - use both sources for reactivity
+    // Check if this is the currently playing short
     private var isCurrentlyPlaying: Bool {
-        let currentId = currentPlayingSongId ?? samplesPlayer.currentSong?.id
-        return currentId == song.id
+        let currentId = currentPlayingShortId ?? samplesPlayer.currentShort?.id
+        return currentId == short.id
+    }
+    
+    private var isVideo: Bool {
+        displayShort.type == "SHORT_VIDEO"
     }
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Full screen cover image - show cover for currently playing song if this card matches it
-                // Note: geometry dimensions are swapped because we're in a rotated TabView
-                let coverToShow = isCurrentlyPlaying ? (samplesPlayer.currentSong?.cover ?? song.cover) : song.cover
-                
-                CachedAsyncImage(url: URL(string: coverToShow)) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
-                } placeholder: {
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.purple.opacity(0.6), Color.blue.opacity(0.6)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                // Video player for SHORT_VIDEO type
+                if isVideo && isCurrentlyPlaying {
+                    if let player = samplesPlayer.getPlayer() {
+                        VideoPlayerView(player: player)
+                            .id(displayShort.id) // Force view update when short changes
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .clipped()
+                            .ignoresSafeArea(.all)
+                    } else {
+                        // Show loading placeholder while video is loading
+                        Rectangle()
+                            .fill(Color.black)
+                            .overlay {
+                                ProgressView()
+                                    .tint(.white)
+                            }
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                    }
+                } else {
+                    // Cover image for SONG type or when video is not playing
+                    let coverToShow = displayShort.cover ?? ""
+                    
+                    CachedAsyncImage(url: URL(string: coverToShow)) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        Rectangle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.purple.opacity(0.6), Color.blue.opacity(0.6)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
                             )
-                        )
-                        .overlay {
-                            ProgressView()
-                                .tint(.white)
-                        }
+                            .overlay {
+                                ProgressView()
+                                    .tint(.white)
+                            }
+                    }
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+                    .ignoresSafeArea(.all)
                 }
-                .frame(width: geometry.size.width, height: geometry.size.height)
-                .clipped()
-                .ignoresSafeArea(.all)
                 
-                // Dark overlay for better text readability
-                LinearGradient(
-                    colors: [Color.clear, Color.black.opacity(0.3)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
+                // Dark overlay for better text readability (only for non-video or when video is paused)
+                if !isVideo || !isCurrentlyPlaying {
+                    LinearGradient(
+                        colors: [Color.clear, Color.black.opacity(0.3)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                
+                // Bottom song information
+                VStack {
+                    Spacer()
+                    HStack(alignment: .bottom, spacing: 12) {
+                        // Album art thumbnail
+                        if let cover = displayShort.cover, !cover.isEmpty {
+                            CachedAsyncImage(url: URL(string: cover)) { image in
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                            } placeholder: {
+                                Rectangle()
+                                    .fill(Color.gray.opacity(0.3))
+                            }
+                            .frame(width: 60, height: 60)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        
+                        // Title and artist
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let title = displayShort.title, !title.isEmpty {
+                                Text(title)
+                                    .font(.headline)
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                            }
+                            if let artist = displayShort.artist, !artist.isEmpty {
+                                Text(artist)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white.opacity(0.8))
+                                    .lineLimit(1)
+                            }
+                        }
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 100)
+                }
                 
                 // Right side interaction buttons (centered vertically)
                 HStack {
@@ -329,65 +528,49 @@ struct SampleCard: View {
                     VStack(spacing: 24) {
                         Spacer()
                         
-                        // Like button - use current playing song if this is it
-                        let buttonSong = isCurrentlyPlaying ? (samplesPlayer.currentSong ?? song) : song
+                        // Like button
+                        let buttonShort = displayShort
                         VStack(spacing: 8) {
                             Button {
                                 Task {
-                                    let userId = songManager.getCurrentUserId()
-                                    let preferenceManager = PreferenceManager()
-                                    let updatedSong = await preferenceManager.toggleLike(buttonSong, userId: userId)
-                                    // Update in library
+                                    // TODO: Implement like toggle for shorts
                                     await MainActor.run {
-                                        songManager.updateSongInLibrary(updatedSong)
-                                        // Update samplesPlayer currentSong if it's the same
-                                        if samplesPlayer.currentSong?.id == updatedSong.id {
-                                            samplesPlayer.currentSong = updatedSong
-                                        }
-                                        isLiked = updatedSong.isLiked
+                                        isLiked.toggle()
                                     }
                                 }
                             } label: {
-                                Image(systemName: buttonSong.isLiked ? "heart.fill" : "heart")
-                                    .font(.system(size: songManager.iconSize(for: buttonSong.likesCount, baseSize: 28), weight: .medium))
-                                    .foregroundStyle(buttonSong.isLiked ? .pink : .white)
+                                Image(systemName: buttonShort.isLiked ? "heart.fill" : "heart")
+                                    .font(.system(size: songManager.iconSize(for: buttonShort.likesCount, baseSize: 28), weight: .medium))
+                                    .foregroundStyle(buttonShort.isLiked ? .pink : .white)
                                     .frame(width: 56, height: 56)
                                     .background(Color.black.opacity(0.3))
                                     .clipShape(Circle())
                             }
                             
-                            Text("\(buttonSong.likesCount)")
+                            Text("\(buttonShort.likesCount)")
                                 .font(.caption)
                                 .foregroundStyle(.white)
                         }
                         
-                        // Dislike button - use current playing song if this is it
+                        // Dislike button
                         VStack(spacing: 8) {
                             Button {
                                 Task {
-                                    let userId = songManager.getCurrentUserId()
-                                    let preferenceManager = PreferenceManager()
-                                    let updatedSong = await preferenceManager.toggleDislike(buttonSong, userId: userId)
-                                    // Update in library
+                                    // TODO: Implement dislike toggle for shorts
                                     await MainActor.run {
-                                        songManager.updateSongInLibrary(updatedSong)
-                                        // Update samplesPlayer currentSong if it's the same
-                                        if samplesPlayer.currentSong?.id == updatedSong.id {
-                                            samplesPlayer.currentSong = updatedSong
-                                        }
-                                        isDisliked = updatedSong.isDisliked
+                                        isDisliked.toggle()
                                     }
                                 }
                             } label: {
-                                Image(systemName: buttonSong.isDisliked ? "heart.slash.fill" : "heart.slash")
-                                    .font(.system(size: songManager.iconSize(for: buttonSong.dislikesCount, baseSize: 28), weight: .medium))
-                                    .foregroundStyle(buttonSong.isDisliked ? .red : .white)
+                                Image(systemName: buttonShort.isDisliked ? "heart.slash.fill" : "heart.slash")
+                                    .font(.system(size: songManager.iconSize(for: buttonShort.dislikesCount, baseSize: 28), weight: .medium))
+                                    .foregroundStyle(buttonShort.isDisliked ? .red : .white)
                                     .frame(width: 56, height: 56)
                                     .background(Color.black.opacity(0.3))
                                     .clipShape(Circle())
                             }
                             
-                            Text("\(buttonSong.dislikesCount)")
+                            Text("\(buttonShort.dislikesCount)")
                                 .font(.caption)
                                 .foregroundStyle(.white)
                         }
@@ -410,6 +593,24 @@ struct SampleCard: View {
                                 .foregroundStyle(.white)
                         }
                         
+                        // Share button
+                        VStack(spacing: 8) {
+                            Button {
+                                // Share action
+                            } label: {
+                                Image(systemName: "arrowshape.turn.up.right")
+                                    .font(.system(size: 28, weight: .medium))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 56, height: 56)
+                                    .background(Color.black.opacity(0.3))
+                                    .clipShape(Circle())
+                            }
+                            
+                            Text("0")
+                                .font(.caption)
+                                .foregroundStyle(.white)
+                        }
+                        
                         Spacer()
                     }
                     .padding(.trailing, 16)
@@ -417,33 +618,15 @@ struct SampleCard: View {
             }
         }
         .onAppear {
-            // Update state from library song
-            if let librarySong = songManager.librarySongs.first(where: { $0.id == song.id }) {
-                isLiked = librarySong.isLiked
-                isDisliked = librarySong.isDisliked
-            } else {
-                isLiked = song.isLiked
-                isDisliked = song.isDisliked
-            }
+            // Update state from short
+            isLiked = short.isLiked
+            isDisliked = short.isDisliked
         }
-        .onChange(of: samplesPlayer.currentSong) { oldValue, newValue in
-            // Force view refresh when current song changes - this ensures cover updates
+        .onChange(of: samplesPlayer.currentShort) { oldValue, newValue in
             // Update like/dislike state if this card matches
-            if newValue?.id == song.id {
-                if let librarySong = songManager.librarySongs.first(where: { $0.id == song.id }) {
-                    isLiked = librarySong.isLiked
-                    isDisliked = librarySong.isDisliked
-                }
-            }
-        }
-        .onChange(of: samplesPlayer.currentSong?.id) { oldValue, newValue in
-            // Additional onChange to ensure view updates when song ID changes
-        }
-        .onChange(of: songManager.librarySongs) { oldValue, newValue in
-            // Update when library songs change (e.g., after like/dislike)
-            if let librarySong = newValue.first(where: { $0.id == song.id }) {
-                isLiked = librarySong.isLiked
-                isDisliked = librarySong.isDisliked
+            if newValue?.id == short.id {
+                isLiked = newValue?.isLiked ?? false
+                isDisliked = newValue?.isDisliked ?? false
             }
         }
     }

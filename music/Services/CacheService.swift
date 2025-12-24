@@ -20,6 +20,13 @@ struct CachedImageMetadata: Codable {
     let url: String
 }
 
+struct CachedVideoMetadata: Codable {
+    let url: String
+    let title: String
+    let artist: String
+    let coverURL: String?
+}
+
 class CacheService: ObservableObject {
     static let shared = CacheService()
     
@@ -27,14 +34,17 @@ class CacheService: ObservableObject {
     private let cacheDirectory: URL
     private let imagesCacheDirectory: URL
     private let audioCacheDirectory: URL
+    private let videoCacheDirectory: URL
     
     @Published private(set) var totalCacheSize: Double = 0.0 // GB
     @Published private(set) var imagesCacheSize: Double = 0.0 // GB
     @Published private(set) var audioCacheSize: Double = 0.0 // GB
+    @Published private(set) var videoCacheSize: Double = 0.0 // GB
     
     // Store metadata for cached items
     private var imageMetadataMap: [String: CachedImageMetadata] = [:] // filename -> metadata
     private var audioMetadataMap: [String: CachedAudioMetadata] = [:] // filename -> metadata
+    private var videoMetadataMap: [String: CachedVideoMetadata] = [:] // filename -> metadata
     
     private var imageMappingsURL: URL {
         imagesCacheDirectory.appendingPathComponent("metadata.json")
@@ -44,12 +54,17 @@ class CacheService: ObservableObject {
         audioCacheDirectory.appendingPathComponent("metadata.json")
     }
     
+    private var videoMappingsURL: URL {
+        videoCacheDirectory.appendingPathComponent("metadata.json")
+    }
+    
     private init() {
         // Get cache directory
         let cacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
         cacheDirectory = cacheDir.appendingPathComponent("MusicAppCache")
         imagesCacheDirectory = cacheDirectory.appendingPathComponent("Images")
         audioCacheDirectory = cacheDirectory.appendingPathComponent("Audio")
+        videoCacheDirectory = cacheDirectory.appendingPathComponent("Video")
         
         // Create directories if they don't exist
         createDirectoriesIfNeeded()
@@ -65,6 +80,7 @@ class CacheService: ObservableObject {
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         try? fileManager.createDirectory(at: imagesCacheDirectory, withIntermediateDirectories: true)
         try? fileManager.createDirectory(at: audioCacheDirectory, withIntermediateDirectories: true)
+        try? fileManager.createDirectory(at: videoCacheDirectory, withIntermediateDirectories: true)
     }
     
     // MARK: - Image Caching
@@ -144,15 +160,58 @@ class CacheService: ObservableObject {
         return fileManager.fileExists(atPath: fileURL.path)
     }
     
+    // MARK: - Video Caching
+    func cacheVideo(url: URL, data: Data, title: String? = nil, artist: String? = nil, coverURL: String? = nil) {
+        let fileName = url.absoluteString.md5 + ".mp4"
+        let fileURL = videoCacheDirectory.appendingPathComponent(fileName)
+        
+        // Store metadata with video information (thread-safe)
+        let metadata = CachedVideoMetadata(
+            url: url.absoluteString,
+            title: title ?? "Unknown Video",
+            artist: artist ?? "Unknown Artist",
+            coverURL: coverURL
+        )
+        Task { @MainActor in
+            videoMetadataMap[fileName] = metadata
+            await saveVideoMappings()
+        }
+        
+        try? data.write(to: fileURL)
+        
+        Task {
+            await calculateCacheSize()
+        }
+    }
+    
+    func getCachedVideoURL(url: URL) -> URL? {
+        let fileName = url.absoluteString.md5 + ".mp4"
+        let fileURL = videoCacheDirectory.appendingPathComponent(fileName)
+        
+        guard fileManager.fileExists(atPath: fileURL.path) else {
+            return nil
+        }
+        
+        return fileURL
+    }
+    
+    func hasCachedVideo(url: URL) -> Bool {
+        let fileName = url.absoluteString.md5 + ".mp4"
+        let fileURL = videoCacheDirectory.appendingPathComponent(fileName)
+        return fileManager.fileExists(atPath: fileURL.path)
+    }
+    
     // MARK: - Cache Size Calculation
     func calculateCacheSize() async {
         let imagesSize = await calculateDirectorySize(url: imagesCacheDirectory)
         let audioSize = await calculateDirectorySize(url: audioCacheDirectory)
+        let videoSize = await calculateDirectorySize(url: videoCacheDirectory)
         
         await MainActor.run {
             self.imagesCacheSize = imagesSize
             self.audioCacheSize = audioSize
-            self.totalCacheSize = imagesSize + audioSize
+            self.videoCacheSize = videoSize
+            self.totalCacheSize = imagesSize + audioSize + videoSize
         }
     }
     
@@ -184,11 +243,13 @@ class CacheService: ObservableObject {
         await MainActor.run {
             imageMetadataMap.removeAll()
             audioMetadataMap.removeAll()
+            videoMetadataMap.removeAll()
         }
         
         // Clear directories
         await clearDirectory(url: imagesCacheDirectory)
         await clearDirectory(url: audioCacheDirectory)
+        await clearDirectory(url: videoCacheDirectory)
         
         // Recalculate cache size (should be 0 now)
         await calculateCacheSize()
@@ -197,6 +258,7 @@ class CacheService: ObservableObject {
         await MainActor.run {
             imageMetadataMap.removeAll()
             audioMetadataMap.removeAll()
+            videoMetadataMap.removeAll()
         }
     }
     
@@ -207,6 +269,11 @@ class CacheService: ObservableObject {
     
     func clearAudioCache() async {
         await clearDirectory(url: audioCacheDirectory)
+        await calculateCacheSize()
+    }
+    
+    func clearVideoCache() async {
+        await clearDirectory(url: videoCacheDirectory)
         await calculateCacheSize()
     }
     
@@ -237,6 +304,23 @@ class CacheService: ObservableObject {
             audioMetadataMap.removeValue(forKey: fileName)
         }
         await saveAudioMappings()
+        
+        // Remove file
+        try? fileManager.removeItem(at: fileURL)
+        
+        // Recalculate cache size
+        await calculateCacheSize()
+    }
+    
+    func clearCachedVideo(url: URL) async {
+        let fileName = url.absoluteString.md5 + ".mp4"
+        let fileURL = videoCacheDirectory.appendingPathComponent(fileName)
+        
+        // Remove from mappings
+        await MainActor.run {
+            videoMetadataMap.removeValue(forKey: fileName)
+        }
+        await saveVideoMappings()
         
         // Remove file
         try? fileManager.removeItem(at: fileURL)
@@ -285,6 +369,10 @@ class CacheService: ObservableObject {
             await MainActor.run {
                 audioMetadataMap.removeAll()
             }
+        } else if url == videoCacheDirectory {
+            await MainActor.run {
+                videoMetadataMap.removeAll()
+            }
         }
         
         // Wait a bit for file system to update
@@ -305,6 +393,7 @@ class CacheService: ObservableObject {
         let totalSize = totalCacheSize
         let imagesPercentage = totalSize > 0 ? (imagesCacheSize / totalSize) * 100 : 0
         let audioPercentage = totalSize > 0 ? (audioCacheSize / totalSize) * 100 : 0
+        let videoPercentage = totalSize > 0 ? (videoCacheSize / totalSize) * 100 : 0
         
         var categories: [CacheCategory] = []
         
@@ -326,8 +415,17 @@ class CacheService: ObservableObject {
             ))
         }
         
+        if videoCacheSize > 0 {
+            categories.append(CacheCategory(
+                name: "Videos",
+                size: videoCacheSize,
+                percentage: videoPercentage,
+                color: .purple
+            ))
+        }
+        
         // Add "Other" category if there's any remaining space
-        let otherSize = totalSize - imagesCacheSize - audioCacheSize
+        let otherSize = totalSize - imagesCacheSize - audioCacheSize - videoCacheSize
         if otherSize > 0.001 { // 1 MB threshold
             let otherPercentage = (otherSize / totalSize) * 100
             categories.append(CacheCategory(
@@ -369,11 +467,25 @@ class CacheService: ObservableObject {
         return metadata.map { $0.url }
     }
     
+    func getCachedVideoMetadata() async -> [CachedVideoMetadata] {
+        // Always reload from disk to get current state
+        await loadVideoURLMappings(force: true)
+        return await MainActor.run {
+            Array(videoMetadataMap.values)
+        }
+    }
+    
+    func getCachedVideoURLs() async -> [String] {
+        let metadata = await getCachedVideoMetadata()
+        return metadata.map { $0.url }
+    }
+    
     // Force reload mappings from disk (used after clearing cache)
     func reloadMappings() async {
         await MainActor.run {
             imageMetadataMap.removeAll()
             audioMetadataMap.removeAll()
+            videoMetadataMap.removeAll()
         }
     }
     
@@ -507,12 +619,81 @@ class CacheService: ObservableObject {
         }
     }
     
+    private func loadVideoURLMappings(force: Bool = false) async {
+        if !force {
+            let isEmpty = await MainActor.run {
+                return videoMetadataMap.isEmpty
+            }
+            guard isEmpty else { return }
+        }
+        
+        // Clear existing mappings if forcing reload
+        if force {
+            await MainActor.run {
+                videoMetadataMap.removeAll()
+            }
+        }
+        
+        // Try to load from persisted metadata file first
+        if let data = try? Data(contentsOf: videoMappingsURL),
+           let mappings = try? JSONDecoder().decode([String: CachedVideoMetadata].self, from: data) {
+            await MainActor.run {
+                videoMetadataMap = mappings
+            }
+            return
+        }
+        
+        // Fallback: try to reconstruct from filenames (for backward compatibility)
+        guard let enumerator = fileManager.enumerator(
+            at: videoCacheDirectory,
+            includingPropertiesForKeys: [.fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+        
+        var mappings: [String: CachedVideoMetadata] = [:]
+        for case let fileURL as URL in enumerator {
+            let fileName = fileURL.lastPathComponent
+            // Skip metadata file
+            if fileName == "metadata.json" { continue }
+            // Try to extract URL from filename
+            if let range = fileName.range(of: "_", options: .backwards) {
+                let urlPart = String(fileName[range.upperBound...])
+                let originalURL = urlPart.replacingOccurrences(of: ".mp4", with: "")
+                mappings[fileName] = CachedVideoMetadata(url: originalURL, title: "Unknown Video", artist: "Unknown Artist", coverURL: nil)
+            }
+        }
+        
+        await MainActor.run {
+            videoMetadataMap = mappings
+            // Save mappings for next time
+            Task {
+                await saveVideoMappings()
+            }
+        }
+    }
+    
+    private func saveVideoMappings() async {
+        let mappings = await MainActor.run {
+            return videoMetadataMap
+        }
+        
+        if let data = try? JSONEncoder().encode(mappings) {
+            try? data.write(to: videoMappingsURL)
+        }
+    }
+    
     func getCachedImageURLsSync() -> [String] {
         return Array(imageMetadataMap.values.map { $0.url })
     }
     
     func getCachedAudioURLsSync() -> [String] {
         return Array(audioMetadataMap.values.map { $0.url })
+    }
+    
+    func getCachedVideoURLsSync() -> [String] {
+        return Array(videoMetadataMap.values.map { $0.url })
     }
 }
 
