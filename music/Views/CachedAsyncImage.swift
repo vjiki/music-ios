@@ -85,6 +85,12 @@ private class ImageLoader: ObservableObject {
                     }
                 }
             } catch {
+                // Ignore cancellation errors (expected when URL changes quickly)
+                if let urlError = error as? URLError, urlError.code == .cancelled {
+                    // Task was cancelled, which is expected behavior
+                    return
+                }
+                // Only log actual errors, not cancellations
                 print("Failed to load image: \(error.localizedDescription)")
             }
         }

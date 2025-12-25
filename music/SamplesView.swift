@@ -55,6 +55,29 @@ class SamplesPlayer: NSObject, ObservableObject {
         isPlaying = false
     }
     
+    func setPlaybackRate(_ rate: Float) {
+        player?.rate = rate
+    }
+    
+    func setFastPlayback() {
+        // Set playback rate to 1.5x only if currently playing
+        guard let player = player else { return }
+        if isPlaying && player.rate > 0 {
+            // Player is playing, speed it up to 1.5x
+            player.rate = 1.5
+        }
+    }
+    
+    func setNormalPlayback() {
+        // Restore normal playback rate (1.0) if currently playing
+        guard let player = player else { return }
+        if isPlaying && player.rate > 0 {
+            // If playing, restore to normal speed (1.0)
+            player.rate = 1.0
+        }
+        // If paused, rate is already 0, so no change needed
+    }
+    
     func seek(to time: TimeInterval) {
         guard let player else { return }
         let clampedTime = min(max(time, 0), duration)
@@ -269,7 +292,7 @@ struct VideoPlayerView: UIViewRepresentable {
         containerView.layer.addSublayer(playerLayer)
         containerView.playerLayer = playerLayer
         
-        // Set initial frame
+        // Set initial frame to fill entire container
         DispatchQueue.main.async {
             playerLayer.frame = containerView.bounds
         }
@@ -278,9 +301,10 @@ struct VideoPlayerView: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: VideoPlayerContainerView, context: Context) {
-        // Update frame when view size changes
+        // Update frame when view size changes - ensure it fills the entire bounds
         DispatchQueue.main.async {
-            uiView.playerLayer?.frame = uiView.bounds
+            let bounds = uiView.bounds
+            uiView.playerLayer?.frame = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height)
         }
     }
 }
@@ -291,7 +315,26 @@ class VideoPlayerContainerView: UIView {
     
     override func layoutSubviews() {
         super.layoutSubviews()
+        // Ensure player layer fills the entire bounds
+        // The videoGravity .resizeAspectFill will handle proper filling
         playerLayer?.frame = bounds
+    }
+    
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        // Ensure container fills its superview
+        if let superview = superview {
+            frame = superview.bounds
+        }
+    }
+    
+    override var frame: CGRect {
+        didSet {
+            // Update player layer when frame changes
+            if frame != oldValue {
+                playerLayer?.frame = bounds
+            }
+        }
     }
 }
 
@@ -301,6 +344,9 @@ struct SamplesView: View {
     @StateObject private var samplesPlayer = SamplesPlayer()
     @State private var currentIndex: Int = 0
     @State private var lastPlayedIndex: Int = -1
+    @State private var scrollPosition: Int? = 0
+    
+    private let songLikesService = SongLikesService()
     
     private var shorts: [ShortsModel] {
         shortsService.shorts
@@ -320,41 +366,58 @@ struct SamplesView: View {
                             .padding(.top, 16)
                     }
                 } else if !shorts.isEmpty {
-                    ZStack {
-                        TabView(selection: $currentIndex) {
-                            ForEach(Array(shorts.enumerated()), id: \.element.id) { index, short in
-                                ShortCard(
-                                    short: short,
-                                    index: index,
-                                    currentIndex: $currentIndex,
-                                    totalShorts: shorts.count,
-                                    currentPlayingShortId: samplesPlayer.currentShort?.id
-                                )
-                                .tag(index)
-                                .environmentObject(songManager)
-                                .environmentObject(samplesPlayer)
-                                .frame(width: geometry.size.height, height: geometry.size.width)
-                                .rotationEffect(.degrees(90))
-                                .scaleEffect(x: 1, y: -1)
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: false) {
+                            LazyVStack(spacing: 0) {
+                                ForEach(Array(shorts.enumerated()), id: \.element.id) { index, short in
+                                    ShortCard(
+                                        short: short,
+                                        index: index,
+                                        currentIndex: $currentIndex,
+                                        totalShorts: shorts.count,
+                                        currentPlayingShortId: samplesPlayer.currentShort?.id,
+                                        onLike: { short in
+                                            await self.toggleLike(for: short)
+                                        },
+                                        onDislike: { short in
+                                            await self.toggleDislike(for: short)
+                                        }
+                                    )
+                                    .environmentObject(songManager)
+                                    .environmentObject(samplesPlayer)
+                                    .frame(width: geometry.size.width, height: geometry.size.height)
+                                    .id(index)
+                                }
+                            }
+                            .scrollTargetLayout()
+                        }
+                        .scrollTargetBehavior(.paging)
+                        .scrollPosition(id: $scrollPosition)
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .onChange(of: scrollPosition) { oldValue, newValue in
+                            if let newIndex = newValue, newIndex != currentIndex && newIndex >= 0 && newIndex < shorts.count {
+                                currentIndex = newIndex
+                                if newIndex != lastPlayedIndex {
+                                    playShort(at: newIndex)
+                                    lastPlayedIndex = newIndex
+                                }
                             }
                         }
-                        .tabViewStyle(.page(indexDisplayMode: .never))
-                        .indexViewStyle(.page(backgroundDisplayMode: .never))
-                        .rotationEffect(.degrees(90))
-                        .scaleEffect(x: 1, y: -1)
-                        .frame(width: geometry.size.height, height: geometry.size.width)
-                    }
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                    .onChange(of: currentIndex) { oldValue, newValue in
-                        if newValue != lastPlayedIndex {
-                            playShort(at: newValue)
-                            lastPlayedIndex = newValue
+                        .onChange(of: currentIndex) { oldValue, newValue in
+                            if newValue != scrollPosition && newValue >= 0 && newValue < shorts.count {
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    proxy.scrollTo(newValue, anchor: .top)
+                                }
+                                scrollPosition = newValue
+                            }
                         }
-                    }
-                    .onAppear {
-                        if lastPlayedIndex == -1 {
-                            playShort(at: 0)
-                            lastPlayedIndex = 0
+                        .onAppear {
+                            if lastPlayedIndex == -1 {
+                                scrollPosition = 0
+                                currentIndex = 0
+                                playShort(at: 0)
+                                lastPlayedIndex = 0
+                            }
                         }
                     }
                 } else {
@@ -391,6 +454,87 @@ struct SamplesView: View {
             samplesPlayer.play()
         }
     }
+    
+    // MARK: - Like/Dislike Methods
+    func toggleLike(for short: ShortsModel) async {
+        let userId = songManager.getCurrentUserId()
+        var updatedShort = short
+        
+        // Update local state immediately for responsive UI
+        await MainActor.run {
+            if !updatedShort.isLiked {
+                // First like - set as liked and remove dislike
+                updatedShort.isLiked = true
+                updatedShort.isDisliked = false
+                updatedShort.likesCount += 1
+                if updatedShort.dislikesCount > 0 {
+                    updatedShort.dislikesCount -= 1
+                }
+            } else {
+                // Already liked - add another like (multiple likes allowed)
+                updatedShort.likesCount += 1
+            }
+        }
+        
+        // Call API - backend handles the like logic
+        do {
+            try await songLikesService.likeSong(userId: userId, songId: short.id)
+            // Update short in service after successful API call
+            await MainActor.run {
+                shortsService.updateShort(updatedShort)
+                // Update current short if it's the one being played
+                if samplesPlayer.currentShort?.id == short.id {
+                    samplesPlayer.currentShort = updatedShort
+                }
+            }
+        } catch {
+            print("Failed to like short: \(error.localizedDescription)")
+            // Revert local state on error
+            await MainActor.run {
+                shortsService.updateShort(short)
+            }
+        }
+    }
+    
+    func toggleDislike(for short: ShortsModel) async {
+        let userId = songManager.getCurrentUserId()
+        var updatedShort = short
+        
+        // Update local state immediately for responsive UI
+        await MainActor.run {
+            if !updatedShort.isDisliked {
+                // First dislike - set as disliked and remove like
+                updatedShort.isDisliked = true
+                updatedShort.isLiked = false
+                updatedShort.dislikesCount += 1
+                if updatedShort.likesCount > 0 {
+                    updatedShort.likesCount -= 1
+                }
+            } else {
+                // Already disliked - add another dislike (multiple dislikes allowed)
+                updatedShort.dislikesCount += 1
+            }
+        }
+        
+        // Call API - backend handles the dislike logic
+        do {
+            try await songLikesService.dislikeSong(userId: userId, songId: short.id)
+            // Update short in service after successful API call
+            await MainActor.run {
+                shortsService.updateShort(updatedShort)
+                // Update current short if it's the one being played
+                if samplesPlayer.currentShort?.id == short.id {
+                    samplesPlayer.currentShort = updatedShort
+                }
+            }
+        } catch {
+            print("Failed to dislike short: \(error.localizedDescription)")
+            // Revert local state on error
+            await MainActor.run {
+                shortsService.updateShort(short)
+            }
+        }
+    }
 }
 
 struct ShortCard: View {
@@ -399,11 +543,11 @@ struct ShortCard: View {
     @Binding var currentIndex: Int
     let totalShorts: Int
     let currentPlayingShortId: String?
+    let onLike: (ShortsModel) async -> Void
+    let onDislike: (ShortsModel) async -> Void
     
     @EnvironmentObject var songManager: SongManager
     @EnvironmentObject var samplesPlayer: SamplesPlayer
-    @State private var isLiked: Bool = false
-    @State private var isDisliked: Bool = false
     
     // Get the short to display - prioritize currently playing short if this card matches it
     private var displayShort: ShortsModel {
@@ -427,7 +571,7 @@ struct ShortCard: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Video player for SHORT_VIDEO type
+                // Video player for SHORT_VIDEO type - full screen
                 if isVideo && isCurrentlyPlaying {
                     if let player = samplesPlayer.getPlayer() {
                         VideoPlayerView(player: player)
@@ -435,6 +579,7 @@ struct ShortCard: View {
                             .frame(width: geometry.size.width, height: geometry.size.height)
                             .clipped()
                             .ignoresSafeArea(.all)
+                            .contentShape(Rectangle())
                     } else {
                         // Show loading placeholder while video is loading
                         Rectangle()
@@ -444,6 +589,7 @@ struct ShortCard: View {
                                     .tint(.white)
                             }
                             .frame(width: geometry.size.width, height: geometry.size.height)
+                            .ignoresSafeArea(.all)
                     }
                 } else {
                     // Cover image for SONG type or when video is not playing
@@ -467,6 +613,7 @@ struct ShortCard: View {
                                     .tint(.white)
                             }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .clipped()
                     .ignoresSafeArea(.all)
@@ -521,7 +668,27 @@ struct ShortCard: View {
                     .padding(.bottom, 100)
                 }
                 
-                // Right side interaction buttons (centered vertically)
+                // Tap area for play/pause - placed before buttons so buttons are on top
+                // Use simultaneousGesture so it doesn't block scrolling
+                if isCurrentlyPlaying {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .simultaneousGesture(
+                            // Tap gesture for play/pause - won't block scrolling
+                            TapGesture()
+                                .onEnded { _ in
+                                    // Toggle play/pause
+                                    if samplesPlayer.isPlaying {
+                                        samplesPlayer.pause()
+                                    } else {
+                                        samplesPlayer.play()
+                                    }
+                                }
+                        )
+                }
+                
+                // Right side interaction buttons (always visible, positioned on the right)
                 HStack {
                     Spacer()
                     
@@ -533,10 +700,7 @@ struct ShortCard: View {
                         VStack(spacing: 8) {
                             Button {
                                 Task {
-                                    // TODO: Implement like toggle for shorts
-                                    await MainActor.run {
-                                        isLiked.toggle()
-                                    }
+                                    await onLike(buttonShort)
                                 }
                             } label: {
                                 Image(systemName: buttonShort.isLiked ? "heart.fill" : "heart")
@@ -546,6 +710,7 @@ struct ShortCard: View {
                                     .background(Color.black.opacity(0.3))
                                     .clipShape(Circle())
                             }
+                            .buttonStyle(ScaleButtonStyle())
                             
                             Text("\(buttonShort.likesCount)")
                                 .font(.caption)
@@ -556,10 +721,7 @@ struct ShortCard: View {
                         VStack(spacing: 8) {
                             Button {
                                 Task {
-                                    // TODO: Implement dislike toggle for shorts
-                                    await MainActor.run {
-                                        isDisliked.toggle()
-                                    }
+                                    await onDislike(buttonShort)
                                 }
                             } label: {
                                 Image(systemName: buttonShort.isDisliked ? "heart.slash.fill" : "heart.slash")
@@ -569,6 +731,7 @@ struct ShortCard: View {
                                     .background(Color.black.opacity(0.3))
                                     .clipShape(Circle())
                             }
+                            .buttonStyle(ScaleButtonStyle())
                             
                             Text("\(buttonShort.dislikesCount)")
                                 .font(.caption)
@@ -593,42 +756,22 @@ struct ShortCard: View {
                                 .foregroundStyle(.white)
                         }
                         
-                        // Share button
-                        VStack(spacing: 8) {
-                            Button {
-                                // Share action
-                            } label: {
-                                Image(systemName: "arrowshape.turn.up.right")
-                                    .font(.system(size: 28, weight: .medium))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 56, height: 56)
-                                    .background(Color.black.opacity(0.3))
-                                    .clipShape(Circle())
-                            }
-                            
-                            Text("0")
-                                .font(.caption)
-                                .foregroundStyle(.white)
-                        }
-                        
                         Spacer()
                     }
                     .padding(.trailing, 16)
                 }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
-        .onAppear {
-            // Update state from short
-            isLiked = short.isLiked
-            isDisliked = short.isDisliked
-        }
-        .onChange(of: samplesPlayer.currentShort) { oldValue, newValue in
-            // Update like/dislike state if this card matches
-            if newValue?.id == short.id {
-                isLiked = newValue?.isLiked ?? false
-                isDisliked = newValue?.isDisliked ?? false
-            }
-        }
+    }
+}
+
+// Button style for scale animation on press
+struct ScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 1.2 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
 

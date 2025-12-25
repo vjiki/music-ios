@@ -133,6 +133,12 @@ class NowPlayingService: NowPlayingServiceProtocol {
                     }
                 }
             } catch {
+                // Ignore cancellation errors (expected when switching songs quickly)
+                if let urlError = error as? URLError, urlError.code == .cancelled {
+                    // Task was cancelled, which is expected behavior
+                    return
+                }
+                // Only log actual errors, not cancellations
                 print("Failed to load album art: \(error)")
                 await MainActor.run {
                     completion(nil)

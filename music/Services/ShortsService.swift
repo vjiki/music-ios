@@ -18,7 +18,7 @@ protocol ShortsServiceProtocol {
 
 // MARK: - Implementation (Single Responsibility: Shorts Fetching)
 class ShortsService: ObservableObject, ShortsServiceProtocol {
-    @Published private(set) var shorts: [ShortsModel] = []
+    @Published var shorts: [ShortsModel] = []
     @Published private(set) var isLoading: Bool = false
     
     private var baseURL: String {
@@ -76,6 +76,13 @@ class ShortsService: ObservableObject, ShortsServiceProtocol {
                 self.shorts = []
                 self.isLoading = false
             }
+        }
+    }
+    
+    // Update a specific short in the list
+    func updateShort(_ updatedShort: ShortsModel) {
+        if let index = shorts.firstIndex(where: { $0.id == updatedShort.id }) {
+            shorts[index] = updatedShort
         }
     }
 }
