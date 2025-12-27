@@ -10,6 +10,7 @@ import SwiftUI
 import UIKit
 import AuthenticationServices
 import GoogleSignIn
+import FirebaseAuth
 
 // MARK: - User Model
 struct User {
@@ -130,21 +131,31 @@ class AuthService: ObservableObject, AuthServiceProtocol {
             throw AuthError.noPresentingViewController
         }
         
+        // Sign in with Google using GoogleSignIn SDK
         let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presentingViewController)
         
-        let user = result.user
-        guard let idToken = user.idToken?.tokenString else {
+        guard let idToken = result.user.idToken?.tokenString else {
             throw AuthError.googleSignInFailed
         }
         
-        let profile = user.profile
+        // Create Firebase credential with Google ID token
+        let credential = GoogleAuthProvider.credential(withIDToken: idToken,
+                                                       accessToken: result.user.accessToken.tokenString)
         
+        // Sign in to Firebase with the Google credential
+        let authResult = try await Auth.auth().signIn(with: credential)
+        let firebaseUser = authResult.user
+        
+        // Get user profile from Google Sign-In result
+        let profile = result.user.profile
+        
+        // Create user model from Firebase and Google profile
         let authUser = User(
-            id: user.userID ?? UUID().uuidString,
-            email: profile?.email,
-            name: profile?.name,
-            nickname: profile?.name,
-            avatarUrl: profile?.imageURL(withDimension: 200)?.absoluteString,
+            id: firebaseUser.uid,
+            email: firebaseUser.email ?? profile?.email,
+            name: firebaseUser.displayName ?? profile?.name,
+            nickname: firebaseUser.displayName ?? profile?.name,
+            avatarUrl: firebaseUser.photoURL?.absoluteString ?? profile?.imageURL(withDimension: 200)?.absoluteString,
             provider: .google
         )
         
@@ -260,6 +271,14 @@ class AuthService: ObservableObject, AuthServiceProtocol {
     }
     
     func signOut() async {
+        // Sign out from Firebase
+        do {
+            try Auth.auth().signOut()
+        } catch {
+            // Log error but continue with local sign out
+            print("Firebase sign out error: \(error.localizedDescription)")
+        }
+        
         // Sign out from Google if signed in with Google
         if currentUser?.provider == .google {
             GIDSignIn.sharedInstance.signOut()
