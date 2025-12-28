@@ -46,6 +46,24 @@ struct AuthRequest: Codable {
     let password: String
 }
 
+struct UserExistsResponse: Codable {
+    let exists: Bool
+    let userId: String?
+}
+
+struct RegisterRequest: Codable {
+    let email: String
+    let nickname: String?
+    let avatarUrl: String?
+    let provider: String
+}
+
+struct RegisterResponse: Codable {
+    let authenticated: Bool
+    let userId: String
+    let message: String
+}
+
 enum AuthProvider: String, Codable {
     case guest
     case google
@@ -134,28 +152,86 @@ class AuthService: ObservableObject, AuthServiceProtocol {
         // Sign in with Google using GoogleSignIn SDK
         let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presentingViewController)
         
+        // Extract tokens from Google Sign-In result
+        // `idToken` is optional; `accessToken` is non-optional in recent GoogleSignIn versions
         guard let idToken = result.user.idToken?.tokenString else {
             throw AuthError.googleSignInFailed
         }
+        let accessToken = result.user.accessToken.tokenString
         
-        // Create Firebase credential with Google ID token
+        // Create Firebase credential with the Google ID token and access token
         let credential = GoogleAuthProvider.credential(withIDToken: idToken,
-                                                       accessToken: result.user.accessToken.tokenString)
+                                                       accessToken: accessToken)
         
         // Sign in to Firebase with the Google credential
-        let authResult = try await Auth.auth().signIn(with: credential)
+        // This will create a user in Firebase Auth if they don't exist
+        let authResult: AuthDataResult
+        do {
+            authResult = try await Auth.auth().signIn(with: credential)
+        } catch {
+            // If Firebase sign-in fails, provide a more helpful error message
+            print("⚠️ Firebase Auth sign-in failed: \(error.localizedDescription)")
+            let nsError = error as NSError
+            if nsError.domain == "FIRAuthErrorDomain" {
+                throw AuthError.firebaseAuthFailed("Firebase authentication failed: \(error.localizedDescription)")
+            }
+            throw AuthError.firebaseAuthFailed("Unable to sign in with Firebase: \(error.localizedDescription)")
+        }
+        
         let firebaseUser = authResult.user
         
         // Get user profile from Google Sign-In result
         let profile = result.user.profile
         
-        // Create user model from Firebase and Google profile
+        // Get user email (required for backend check)
+        guard let userEmail = firebaseUser.email ?? profile?.email else {
+            throw AuthError.googleSignInFailed
+        }
+        
+        // Get user display name and avatar
+        let displayName = firebaseUser.displayName ?? profile?.name
+        let avatarUrl = firebaseUser.photoURL?.absoluteString ?? profile?.imageURL(withDimension: 200)?.absoluteString
+        
+        // Check if user exists on backend with GOOGLE provider
+        let backendUserId: String?
+        do {
+            backendUserId = try await checkUserExists(email: userEmail, provider: "GOOGLE")
+        } catch {
+            print("⚠️ Failed to check if user exists: \(error.localizedDescription)")
+            // Continue with registration if check fails
+            backendUserId = nil
+        }
+        
+        // If user doesn't exist, register them
+        let finalUserId: String
+        if let userId = backendUserId {
+            // User exists, use the backend userId
+            print("✅ User exists on backend with ID: \(userId)")
+            finalUserId = userId
+        } else {
+            // Register new user on backend with GOOGLE provider
+            print("📝 Registering new user on backend with GOOGLE provider...")
+            do {
+                finalUserId = try await registerUser(
+                    email: userEmail,
+                    nickname: displayName,
+                    avatarUrl: avatarUrl,
+                    provider: "GOOGLE"
+                )
+                print("✅ User registered successfully with ID: \(finalUserId)")
+            } catch {
+                print("❌ Failed to register user: \(error.localizedDescription)")
+                throw AuthError.registrationFailed(error.localizedDescription)
+            }
+        }
+        
+        // Create user model with backend userId
         let authUser = User(
-            id: firebaseUser.uid,
-            email: firebaseUser.email ?? profile?.email,
-            name: firebaseUser.displayName ?? profile?.name,
-            nickname: firebaseUser.displayName ?? profile?.name,
-            avatarUrl: firebaseUser.photoURL?.absoluteString ?? profile?.imageURL(withDimension: 200)?.absoluteString,
+            id: finalUserId,
+            email: userEmail,
+            name: displayName,
+            nickname: displayName,
+            avatarUrl: avatarUrl,
             provider: .google
         )
         
@@ -176,6 +252,79 @@ class AuthService: ObservableObject, AuthServiceProtocol {
         
         // Fallback: return nil (user needs to configure)
         return nil
+    }
+    
+    // MARK: - Backend User Management
+    
+    /// Check if a user exists on the backend by email and provider
+    private func checkUserExists(email: String, provider: String) async throws -> String? {
+        guard let encodedEmail = email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let encodedProvider = provider.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            throw AuthError.invalidEmail
+        }
+        
+        let url = URL(string: "\(baseURL)/api/v1/auth/exists?email=\(encodedEmail)&provider=\(encodedProvider)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthError.authenticationFailed
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw AuthError.authenticationFailed
+        }
+        
+        let decoder = JSONDecoder()
+        let existsResponse = try decoder.decode(UserExistsResponse.self, from: data)
+        
+        // Return userId if user exists and userId is not nil
+        if existsResponse.exists, let userId = existsResponse.userId {
+            return userId
+        }
+        
+        // User doesn't exist or userId is missing
+        return nil
+    }
+    
+    /// Register a new user on the backend
+    private func registerUser(email: String, nickname: String?, avatarUrl: String?, provider: String) async throws -> String {
+        let url = URL(string: "\(baseURL)/api/v1/auth/register")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let registerRequest = RegisterRequest(
+            email: email,
+            nickname: nickname,
+            avatarUrl: avatarUrl,
+            provider: provider
+        )
+        
+        let encoder = JSONEncoder()
+        request.httpBody = try encoder.encode(registerRequest)
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthError.authenticationFailed
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw AuthError.authenticationFailed
+        }
+        
+        let decoder = JSONDecoder()
+        let registerResponse = try decoder.decode(RegisterResponse.self, from: data)
+        
+        guard registerResponse.authenticated else {
+            throw AuthError.authenticationFailed
+        }
+        
+        return registerResponse.userId
     }
     
     func signInWithApple(authorization: ASAuthorizationAppleIDCredential) async throws {
@@ -323,11 +472,13 @@ enum AuthError: LocalizedError {
     case noPresentingViewController
     case missingGoogleClientID
     case googleSignInFailed
+    case firebaseAuthFailed(String)
     case invalidCredentials
     case invalidEmail
     case weakPassword
     case authenticationFailed
     case userInfoFailed
+    case registrationFailed(String)
     
     var errorDescription: String? {
         switch self {
@@ -337,6 +488,8 @@ enum AuthError: LocalizedError {
             return "Google Client ID is missing. Please configure GoogleService-Info.plist"
         case .googleSignInFailed:
             return "Google Sign-In failed"
+        case .firebaseAuthFailed(let message):
+            return "Firebase authentication failed: \(message)"
         case .invalidCredentials:
             return "Invalid email or password"
         case .invalidEmail:
@@ -347,6 +500,8 @@ enum AuthError: LocalizedError {
             return "Authentication failed. Please check your credentials and try again."
         case .userInfoFailed:
             return "Failed to retrieve user information. Please try again."
+        case .registrationFailed(let message):
+            return "Failed to register user: \(message)"
         }
     }
 }
