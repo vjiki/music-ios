@@ -47,7 +47,7 @@ struct Home: View {
                 .environmentObject(authService)
         }
         .background(Color.black.ignoresSafeArea())
-        .safeAreaInset(edge: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 // Hide mini player on samples view
                 if !songManager.song.title.isEmpty && currentTab != .samples {
@@ -154,8 +154,13 @@ struct Home: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(Color.black.opacity(0.95))
+            .padding(.top, 10)
+            .padding(.bottom, 10)
+            .background(
+                // Semi-transparent background on all views - extends to bottom
+                Color.black.opacity(0.5)
+                    .ignoresSafeArea(edges: .bottom)
+            )
             .overlay(
                 Rectangle()
                     .fill(Color.white.opacity(0.1))

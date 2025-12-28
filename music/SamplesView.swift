@@ -394,6 +394,7 @@ struct SamplesView: View {
                         .scrollTargetBehavior(.paging)
                         .scrollPosition(id: $scrollPosition)
                         .frame(width: geometry.size.width, height: geometry.size.height)
+                        .ignoresSafeArea(.all)
                         .onChange(of: scrollPosition) { oldValue, newValue in
                             if let newIndex = newValue, newIndex != currentIndex && newIndex >= 0 && newIndex < shorts.count {
                                 currentIndex = newIndex
@@ -429,6 +430,7 @@ struct SamplesView: View {
                 }
             }
         }
+        .ignoresSafeArea(.all)
         .onAppear {
             // Fetch shorts when view appears
             Task {
