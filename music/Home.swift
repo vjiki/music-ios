@@ -137,6 +137,11 @@ struct Home: View {
             TabItem(tab: .profile, icon: "person.crop.circle", selectedIcon: "person.crop.circle.fill")
         ]
         
+        // Check if we're on samples view to adjust opacity
+        private var isSamplesView: Bool {
+            currentTab == .samples
+        }
+        
         var body: some View {
             HStack {
                 ForEach(items) { item in
@@ -157,8 +162,8 @@ struct Home: View {
             .padding(.top, 10)
             .padding(.bottom, 10)
             .background(
-                // Semi-transparent background on all views - extends to bottom
-                Color.black.opacity(0.5)
+                // Semi-transparent background - more transparent on samples view
+                Color.black.opacity(isSamplesView ? 0.1 : 0.6)
                     .ignoresSafeArea(edges: .bottom)
             )
             .overlay(
@@ -201,26 +206,38 @@ private struct HomeTabContent: View {
     @Binding var showPlaylists: Bool
     
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                instagramTopBar
-                    .padding(.top, getSafeAreaTop())
-                    .padding(.bottom, 16)
+        ZStack(alignment: .top) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Add spacing at top to account for fixed top bar
+                    Spacer()
+                        .frame(height: max(0, getSafeAreaTop() - 20) + 50)
+                    
+                    DiscoverRow()
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                        .padding(.bottom, 24)
                 
-                DiscoverRow()
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 24)
-            
-            TagsView()
-            
-            QuickPlay()
-            
-                MixesSection()
+                TagsView()
+                
+                QuickPlay()
+                
+                    MixesSection()
+                }
+                .padding(.bottom, 200)
             }
-            .padding(.bottom, 200)
+            .background(Color.black.ignoresSafeArea())
+            
+            // Fixed top bar at the top - positioned near camera/notch
+            instagramTopBar
+                .padding(.top, max(0, getSafeAreaTop() - 20))
+                .padding(.horizontal, 0)
+                .padding(.vertical, 0)
+                .background(
+                    Color.black.opacity(0.6)
+                        .ignoresSafeArea(edges: .top)
+                )
         }
-        .background(Color.black.ignoresSafeArea())
         .task {
             // Fetch stories from API when view appears
             await fetchStoriesFromAPI()
@@ -243,28 +260,110 @@ private struct HomeTabContent: View {
     }
     
     private var instagramTopBar: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 0) {
             // Header with action buttons
-            HStack(spacing: 16) {
-                Spacer()
-                    
+            HStack(spacing: 12) {
+                // Story creation button on the left
                 Button {
-                    songManager.toggleDislike()
+                    showStoryCreation = true
                 } label: {
-                    Image(systemName: songManager.isCurrentSongDisliked ? "heart.slash.fill" : "heart.slash")
-                        .font(.system(size: songManager.dislikeIconSize, weight: .regular))
-                        .foregroundStyle(songManager.isCurrentSongDisliked ? .red : .white)
+                    ZStack {
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color.pink, Color.orange, Color.purple],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 40, height: 40)
+                        
+                        Circle()
+                            .fill(Color.black)
+                            .frame(width: 38, height: 38)
+                        
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(.white.opacity(0.3))
+                        
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white)
+                            .background(Color.blue)
+                            .clipShape(Circle())
+                            .offset(x: 12, y: 12)
+                    }
                 }
                 .buttonStyle(.plain)
                 
-                Button {
-                    songManager.toggleLike()
-                } label: {
-                    Image(systemName: songManager.isCurrentSongLiked ? "heart.fill" : "heart")
-                        .font(.system(size: songManager.likeIconSize, weight: .regular))
-                        .foregroundStyle(songManager.isCurrentSongLiked ? .red : .white)
+                // Story buttons - from left to middle
+                if !storyManager.stories.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(storyManager.stories.prefix(10)) { story in
+                                Button {
+                                    // Only open if song has audio URL
+                                    guard !story.song.audio_url.isEmpty else {
+                                        storyManager.markStoryAsViewed(story.id)
+                                        return
+                                    }
+                                    
+                                    // Set the story image URL first
+                                    storyImageURL = story.storyImageURL ?? story.storyPreviewURL
+                                    
+                                    // Play the song from the story
+                                    songManager.playSong(story.song, in: [story.song])
+                                    
+                                    // Open MusicView with animation
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        expandSheet = true
+                                    }
+                                    
+                                    // Mark story as viewed
+                                    storyManager.markStoryAsViewed(story.id)
+                                } label: {
+                                    ZStack {
+                                        Circle()
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: story.isViewed ? [Color.gray, Color.gray] : [Color.pink, Color.orange, Color.purple],
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                            )
+                                            .frame(width: 40, height: 40)
+                                        
+                                        Circle()
+                                            .fill(Color.black)
+                                            .frame(width: 38, height: 38)
+                                        
+                                        if let profileImageURL = story.profileImageURL, !profileImageURL.isEmpty {
+                                            CachedAsyncImage(url: URL(string: profileImageURL)) { image in
+                                                image
+                                                    .resizable()
+                                                    .scaledToFill()
+                                            } placeholder: {
+                                                Image(systemName: "person.crop.circle.fill")
+                                                    .font(.system(size: 32))
+                                                    .foregroundStyle(.white.opacity(0.3))
+                                            }
+                                            .frame(width: 38, height: 38)
+                                            .clipShape(Circle())
+                                        } else {
+                                            Image(systemName: "person.crop.circle.fill")
+                                                .font(.system(size: 32))
+                                                .foregroundStyle(.white.opacity(0.3))
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: UIScreen.main.bounds.width * 0.5)
                 }
-                .buttonStyle(.plain)
+                
+                Spacer()
                 
                 Button {
                     showMessages = true
@@ -294,77 +393,7 @@ private struct HomeTabContent: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
-            
-            // Stories section
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    // Your story (create new)
-                    Button {
-                        showStoryCreation = true
-                    } label: {
-                        VStack(spacing: 6) {
-                            ZStack {
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [Color.pink, Color.orange, Color.purple],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .frame(width: 70, height: 70)
-                                
-                                Circle()
-                                    .fill(Color.black)
-                                    .frame(width: 66, height: 66)
-                                
-                                Image(systemName: "person.crop.circle.fill")
-                                    .font(.system(size: 60))
-                                    .foregroundStyle(.white.opacity(0.3))
-                                
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.system(size: 24))
-                                    .foregroundStyle(.white)
-                                    .background(Color.blue)
-                                    .clipShape(Circle())
-                                    .offset(x: 24, y: 24)
-                            }
-                            
-                            Text("Your story")
-                                .font(.caption)
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Other stories
-                    ForEach(storyManager.stories) { story in
-                        StoryCircleView(story: story) {
-                            // Only open if song has audio URL
-                            guard !story.song.audio_url.isEmpty else {
-                                // Mark as viewed even if can't play
-                                storyManager.markStoryAsViewed(story.id)
-                                return
-                            }
-                            
-                            // Set the story image URL first
-                            storyImageURL = story.storyImageURL ?? story.storyPreviewURL
-                            
-                            // Play the song from the story
-                            songManager.playSong(story.song, in: [story.song])
-                            
-                            // Open MusicView with animation
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                expandSheet = true
-                            }
-                            
-                            // Mark story as viewed
-                            storyManager.markStoryAsViewed(story.id)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-            }
+            .padding(.vertical, 0)
         }
     }
     

@@ -709,7 +709,7 @@ struct ShortCard: View {
                                     .font(.system(size: songManager.iconSize(for: buttonShort.likesCount, baseSize: 28), weight: .medium))
                                     .foregroundStyle(buttonShort.isLiked ? .pink : .white)
                                     .frame(width: 56, height: 56)
-                                    .background(Color.black.opacity(0.3))
+                                    .background(Color.black.opacity(0.15))
                                     .clipShape(Circle())
                             }
                             .buttonStyle(ScaleButtonStyle())
@@ -730,7 +730,7 @@ struct ShortCard: View {
                                     .font(.system(size: songManager.iconSize(for: buttonShort.dislikesCount, baseSize: 28), weight: .medium))
                                     .foregroundStyle(buttonShort.isDisliked ? .red : .white)
                                     .frame(width: 56, height: 56)
-                                    .background(Color.black.opacity(0.3))
+                                    .background(Color.black.opacity(0.15))
                                     .clipShape(Circle())
                             }
                             .buttonStyle(ScaleButtonStyle())
@@ -749,7 +749,7 @@ struct ShortCard: View {
                                     .font(.system(size: 28, weight: .medium))
                                     .foregroundStyle(.white)
                                     .frame(width: 56, height: 56)
-                                    .background(Color.black.opacity(0.3))
+                                    .background(Color.black.opacity(0.15))
                                     .clipShape(Circle())
                             }
                             
