@@ -206,6 +206,7 @@ private struct HomeTabContent: View {
     @Binding var showPlaylists: Bool
     @State private var quickPlaySongs: [SongsModel] = []
     @State private var mixesSongs: [SongsModel] = []
+    @State private var showCustomizeMyVibe = false
     
     var body: some View {
         ZStack(alignment: .top) {
@@ -219,8 +220,6 @@ private struct HomeTabContent: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 12)
                         .padding(.bottom, 24)
-                
-                TagsView()
                 
                 QuickPlay()
                 
@@ -268,6 +267,9 @@ private struct HomeTabContent: View {
         }
         .sheet(isPresented: $showStoryCreation) {
             StoryCreationView(storyManager: storyManager, songManager: songManager)
+        }
+        .sheet(isPresented: $showCustomizeMyVibe) {
+            CustomizeMyVibeView()
         }
         .sheet(isPresented: $showMessages) {
             MessagesView()
@@ -417,10 +419,8 @@ private struct HomeTabContent: View {
     private func DiscoverRow() -> some View {
         HStack(spacing: 16) {
             let myVibeSong = getMyVibeSong()
-            discoverCard(
-                title: "My Vibe",
-                subtitle: myVibeSong?.title ?? "Breathe with me",
-                icon: "play.fill"
+            myVibeCard(
+                subtitle: myVibeSong?.title ?? "Breathe with me"
             ) {
                 if let song = myVibeSong {
                     songManager.playSong(song, in: songManager.librarySongs)
@@ -461,6 +461,61 @@ private struct HomeTabContent: View {
             // For guest users, return the first song
             return songManager.librarySongs.first
         }
+    }
+    
+    private func myVibeCard(subtitle: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 16, weight: .medium))
+                    Spacer()
+                    Button {
+                        showCustomizeMyVibe = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 12, weight: .medium))
+                            Text("Customize")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.2))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .foregroundStyle(.white.opacity(0.7))
+                
+                Text("My Vibe")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity)
+            .frame(height: 120)
+            .background(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.18), Color.white.opacity(0.08)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.25), radius: 12, x: 0, y: 10)
+        }
+        .buttonStyle(.plain)
     }
     
     private func discoverCard(title: String, subtitle: String, icon: String, action: @escaping () -> Void) -> some View {
@@ -825,6 +880,214 @@ private struct StoryCreationView: View {
                         dismiss()
                     }
                     .foregroundStyle(.white)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Customize My Vibe View
+struct CustomizeMyVibeView: View {
+    @Environment(\.dismiss) var dismiss
+    
+    @State private var selectedActivities: Set<String> = []
+    @State private var selectedCharacters: Set<String> = []
+    @State private var selectedMoods: Set<String> = []
+    @State private var selectedLanguages: Set<String> = []
+    
+    let activities = ["Waking up", "Working", "Working out", "Falling asleep", "Traveling"]
+    let characters = [
+        ("Favorite", "heart.fill", Color.red),
+        ("Unfamiliar", "star.fill", Color.yellow),
+        ("Popular", "bolt.fill", Color.white)
+    ]
+    let moods = [
+        ("Energetic", Color.orange),
+        ("Cheerful", Color.green),
+        ("Calm", Color.cyan),
+        ("Sad", Color.blue)
+    ]
+    let languages = ["Russian", "Foreign", "Wordless"]
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 32) {
+                        // by activity
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("by activity")
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.6))
+                                .padding(.horizontal, 24)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(activities, id: \.self) { activity in
+                                        Button {
+                                            if selectedActivities.contains(activity) {
+                                                selectedActivities.remove(activity)
+                                            } else {
+                                                selectedActivities.insert(activity)
+                                            }
+                                        } label: {
+                                            Text(activity)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 18)
+                                                .padding(.vertical, 10)
+                                                .background(
+                                                    Capsule()
+                                                        .fill(selectedActivities.contains(activity) ? Color.white.opacity(0.2) : Color.white.opacity(0.08))
+                                                )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.horizontal, 24)
+                            }
+                        }
+                        
+                        // by character
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("by character")
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.6))
+                                .padding(.horizontal, 24)
+                            
+                            HStack(spacing: 16) {
+                                ForEach(characters, id: \.0) { character in
+                                    Button {
+                                        if selectedCharacters.contains(character.0) {
+                                            selectedCharacters.remove(character.0)
+                                        } else {
+                                            selectedCharacters.insert(character.0)
+                                        }
+                                    } label: {
+                                        VStack(spacing: 12) {
+                                            Image(systemName: character.1)
+                                                .font(.system(size: 32, weight: .medium))
+                                                .foregroundStyle(character.2)
+                                            
+                                            Text(character.0)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.white)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 20)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .fill(selectedCharacters.contains(character.0) ? Color.white.opacity(0.2) : Color.white.opacity(0.08))
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 24)
+                        }
+                        
+                        // by mood
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("by mood")
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.6))
+                                .padding(.horizontal, 24)
+                            
+                            HStack(spacing: 16) {
+                                ForEach(moods, id: \.0) { mood in
+                                    Button {
+                                        if selectedMoods.contains(mood.0) {
+                                            selectedMoods.remove(mood.0)
+                                        } else {
+                                            selectedMoods.insert(mood.0)
+                                        }
+                                    } label: {
+                                        VStack(spacing: 12) {
+                                            Circle()
+                                                .fill(mood.1)
+                                                .frame(width: 60, height: 60)
+                                            
+                                            Text(mood.0)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.white)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .fill(selectedMoods.contains(mood.0) ? Color.white.opacity(0.2) : Color.clear)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 24)
+                        }
+                        
+                        // by language
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("by language")
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.6))
+                                .padding(.horizontal, 24)
+                            
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(languages, id: \.self) { language in
+                                        Button {
+                                            if selectedLanguages.contains(language) {
+                                                selectedLanguages.remove(language)
+                                            } else {
+                                                selectedLanguages.insert(language)
+                                            }
+                                        } label: {
+                                            Text(language)
+                                                .font(.subheadline)
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 18)
+                                                .padding(.vertical, 10)
+                                                .background(
+                                                    Capsule()
+                                                        .fill(selectedLanguages.contains(language) ? Color.white.opacity(0.2) : Color.white.opacity(0.08))
+                                                )
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.horizontal, 24)
+                            }
+                        }
+                        
+                        // Reset button
+                        Button {
+                            selectedActivities.removeAll()
+                            selectedCharacters.removeAll()
+                            selectedMoods.removeAll()
+                            selectedLanguages.removeAll()
+                        } label: {
+                            Text("Reset")
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.6))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 20)
+                        .padding(.bottom, 40)
+                    }
+                    .padding(.top, 60)
+                }
+            }
+            .navigationTitle("Customize My Vibe")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.white.opacity(0.7))
+                    }
                 }
             }
         }
