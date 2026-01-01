@@ -7,6 +7,12 @@
 
 import SwiftUI
 
+// MARK: - Song Tag Model
+struct SongTag: Codable, Equatable {
+    let name: String
+    let weight: Double
+}
+
 // Now we create Songs Model List
 struct SongsModel: Identifiable, Codable, Equatable {
     var id: String
@@ -15,6 +21,7 @@ struct SongsModel: Identifiable, Codable, Equatable {
     var cover: String
     var title: String
     var video_url: String?
+    var tags: [SongTag]?
     var isLiked: Bool
     var isDisliked: Bool
     var likesCount: Int
@@ -27,6 +34,7 @@ struct SongsModel: Identifiable, Codable, Equatable {
         case cover
         case title
         case video_url
+        case tags
         case isLiked
         case isDisliked
         case likesCount
@@ -40,6 +48,7 @@ struct SongsModel: Identifiable, Codable, Equatable {
         cover: String,
         title: String,
         video_url: String? = nil,
+        tags: [SongTag]? = nil,
         isLiked: Bool = false,
         isDisliked: Bool = false,
         likesCount: Int = 0,
@@ -51,6 +60,7 @@ struct SongsModel: Identifiable, Codable, Equatable {
         self.cover = cover
         self.title = title
         self.video_url = video_url
+        self.tags = tags
         self.isLiked = isLiked
         self.isDisliked = isDisliked
         self.likesCount = likesCount

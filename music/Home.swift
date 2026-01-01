@@ -200,6 +200,7 @@ private struct HomeTabContent: View {
     @EnvironmentObject var authService: AuthService
     @StateObject private var storyManager = StoryManager()
     @StateObject private var storiesService = StoriesService()
+    @StateObject private var preferenceManager = PreferenceManager()
     @State private var showStoryCreation = false
     @State private var showMessages = false
     @Binding var showSearch: Bool
@@ -419,13 +420,17 @@ private struct HomeTabContent: View {
     private func DiscoverRow() -> some View {
         HStack(spacing: 16) {
             let myVibeSong = getMyVibeSong()
+            let selectedMoods = preferenceManager.getSelectedMoods()
+            let filteredSongs = !selectedMoods.isEmpty ? filterSongsByMoodTags(songManager.librarySongs, moods: selectedMoods) : songManager.librarySongs
+            let playlistToUse = !filteredSongs.isEmpty ? filteredSongs : songManager.librarySongs
+            
             myVibeCard(
                 subtitle: myVibeSong?.title ?? "Breathe with me"
             ) {
                 if let song = myVibeSong {
-                    songManager.playSong(song, in: songManager.librarySongs)
-                } else if let first = songManager.librarySongs.first {
-                    songManager.playSong(first, in: songManager.librarySongs)
+                    songManager.playSong(song, in: playlistToUse)
+                } else if let first = playlistToUse.first {
+                    songManager.playSong(first, in: playlistToUse)
                 }
             }
             
@@ -451,15 +456,64 @@ private struct HomeTabContent: View {
         }
     }
     
+    // MARK: - Mood to Tags Mapping
+    private func getTagsForMood(_ mood: String) -> [String] {
+        switch mood.lowercased() {
+        case "energetic":
+            return ["Energetic", "Aggressive", "Workout", "Rock", "Alternative"]
+        case "cheerful":
+            return ["Cheerful", "Chill", "Happy", "Indie", "Electronic"]
+        case "calm":
+            return ["Calm", "Chill", "Focus", "Melancholic", "Indie"]
+        case "sad":
+            return ["Sad", "Dark", "Melancholic", "Indie"]
+        default:
+            return []
+        }
+    }
+    
+    // MARK: - Filter Songs by Tags
+    private func filterSongsByMoodTags(_ songs: [SongsModel], moods: Set<String>) -> [SongsModel] {
+        guard !moods.isEmpty else { return songs }
+        
+        // Get all relevant tags for selected moods
+        let relevantTags = moods.flatMap { getTagsForMood($0) }
+        guard !relevantTags.isEmpty else { return songs }
+        
+        // Filter songs that have at least one matching tag with weight >= 0.5
+        return songs.filter { song in
+            guard let tags = song.tags, !tags.isEmpty else { return false }
+            
+            // Check if song has any tag matching the mood tags with sufficient weight
+            return tags.contains { tag in
+                relevantTags.contains(where: { $0.lowercased() == tag.name.lowercased() }) && tag.weight >= 0.5
+            }
+        }
+    }
+    
     private func getMyVibeSong() -> SongsModel? {
         guard !songManager.librarySongs.isEmpty else { return nil }
         
-        // For authenticated users, get the most liked song
+        // Get selected moods from preferences
+        let selectedMoods = preferenceManager.getSelectedMoods()
+        
+        // If moods are selected, filter songs by tags
+        var candidateSongs = songManager.librarySongs
+        if !selectedMoods.isEmpty {
+            candidateSongs = filterSongsByMoodTags(candidateSongs, moods: selectedMoods)
+        }
+        
+        // If no songs match the mood tags, fall back to all songs
+        if candidateSongs.isEmpty {
+            candidateSongs = songManager.librarySongs
+        }
+        
+        // For authenticated users, get the most liked song from filtered results
         if authService.isAuthenticated {
-            return songManager.librarySongs.max(by: { $0.likesCount < $1.likesCount })
+            return candidateSongs.max(by: { $0.likesCount < $1.likesCount })
         } else {
-            // For guest users, return the first song
-            return songManager.librarySongs.first
+            // For guest users, return the first song from filtered results
+            return candidateSongs.first
         }
     }
     
@@ -889,6 +943,7 @@ private struct StoryCreationView: View {
 // MARK: - Customize My Vibe View
 struct CustomizeMyVibeView: View {
     @Environment(\.dismiss) var dismiss
+    @StateObject private var preferenceManager = PreferenceManager()
     
     @State private var selectedActivities: Set<String> = []
     @State private var selectedCharacters: Set<String> = []
@@ -1003,6 +1058,8 @@ struct CustomizeMyVibeView: View {
                                         } else {
                                             selectedMoods.insert(mood.0)
                                         }
+                                        // Save moods immediately when changed
+                                        preferenceManager.saveSelectedMoods(selectedMoods)
                                     } label: {
                                         VStack(spacing: 12) {
                                             Circle()
@@ -1066,6 +1123,8 @@ struct CustomizeMyVibeView: View {
                             selectedCharacters.removeAll()
                             selectedMoods.removeAll()
                             selectedLanguages.removeAll()
+                            // Save empty moods when reset
+                            preferenceManager.saveSelectedMoods([])
                         } label: {
                             Text("Reset")
                                 .font(.subheadline)
@@ -1083,12 +1142,18 @@ struct CustomizeMyVibeView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
+                        // Save moods before dismissing
+                        preferenceManager.saveSelectedMoods(selectedMoods)
                         dismiss()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.white.opacity(0.7))
                     }
                 }
+            }
+            .onAppear {
+                // Load saved moods when view appears
+                selectedMoods = preferenceManager.getSelectedMoods()
             }
         }
     }
