@@ -100,6 +100,14 @@ class SongManager: ObservableObject {
         iconSize(for: song.dislikesCount)
     }
     
+    var hasMoreSongs: Bool {
+        songsService.hasMore
+    }
+    
+    var isLoadingMoreSongs: Bool {
+        songsService.isLoading
+    }
+    
     // MARK: - Initialization (Dependency Injection)
     init(
         audioPlayer: AudioPlayerServiceProtocol = AudioPlayerService(),
@@ -345,6 +353,28 @@ class SongManager: ObservableObject {
                     }
                 } else {
                     mergedSongs.append(newSong)
+                }
+            }
+            
+            self.librarySongs = mergedSongs
+        }
+    }
+    
+    func loadMoreSongs() async {
+        let userId = getCurrentUserId()
+        await songsService.loadMoreSongs(userId: userId)
+        await MainActor.run {
+            // Update library songs with newly loaded songs
+            let newSongs = songsService.songs
+            var mergedSongs = librarySongs
+            
+            // Add new songs that aren't already in library
+            for newSong in newSongs {
+                if !mergedSongs.contains(where: { $0.id == newSong.id }) {
+                    mergedSongs.append(newSong)
+                } else if let index = mergedSongs.firstIndex(where: { $0.id == newSong.id }) {
+                    // Update existing song with latest data
+                    mergedSongs[index] = newSong
                 }
             }
             

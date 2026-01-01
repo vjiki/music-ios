@@ -8,22 +8,38 @@
 import Foundation
 import Combine
 
+// MARK: - Pagination Response Model
+struct CursorPageResponse<T: Codable>: Codable {
+    let items: [T]
+    let nextCursor: String?
+    let hasNext: Bool
+    let limit: Int?
+}
+
 // MARK: - Protocol (Interface Segregation)
 protocol SongsServiceProtocol {
     var songs: [SongsModel] { get }
     var isLoading: Bool { get }
+    var hasMore: Bool { get }
+    var nextCursor: String? { get }
     
     func fetchSongs(userId: String) async
+    func fetchSongsPage(userId: String, limit: Int, cursor: String?) async throws -> CursorPageResponse<SongsModel>
+    func loadMoreSongs(userId: String) async
 }
 
 // MARK: - Implementation (Single Responsibility: Songs Fetching)
 class SongsService: ObservableObject, SongsServiceProtocol {
     @Published private(set) var songs: [SongsModel] = []
     @Published private(set) var isLoading: Bool = false
+    @Published private(set) var hasMore: Bool = false
+    @Published private(set) var nextCursor: String? = nil
     
     private var baseURL: String {
         return "https://music-back-g2u6.onrender.com"
     }
+    
+    private let defaultLimit = 20
     
     init() {
         // Initialize with fallback songs
@@ -31,50 +47,22 @@ class SongsService: ObservableObject, SongsServiceProtocol {
     }
     
     func fetchSongs(userId: String) async {
+        // Reset pagination state and fetch first page
         await MainActor.run {
             isLoading = true
+            songs = []
+            nextCursor = nil
+            hasMore = false
         }
         
         do {
-            let apiURL = "\(baseURL)/api/v1/songs/\(userId)"
-            guard let url = URL(string: apiURL) else {
-                throw URLError(.badURL)
+            let page = try await fetchSongsPage(userId: userId, limit: defaultLimit, cursor: nil)
+            await MainActor.run {
+                self.songs = page.items
+                self.nextCursor = page.nextCursor
+                self.hasMore = page.hasNext
+                self.isLoading = false
             }
-            
-            let (data, response) = try await URLSession.shared.data(from: url)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw URLError(.badServerResponse)
-            }
-            
-            // Check if response is successful
-            guard (200...299).contains(httpResponse.statusCode) else {
-                throw URLError(.badServerResponse)
-            }
-            
-            // Decode JSON response
-            let decoder = JSONDecoder()
-            do {
-                let fetchedSongs = try decoder.decode([SongsModel].self, from: data)
-                
-                // Check if response is empty
-                guard !fetchedSongs.isEmpty else {
-                    throw SongsServiceError.emptyResponse
-                }
-                
-                await MainActor.run {
-                    self.songs = fetchedSongs
-                    self.isLoading = false
-                }
-            } catch let decodingError as DecodingError {
-                // Print detailed decoding error
-                print("Failed to decode songs: \(decodingError)")
-                if let dataString = String(data: data, encoding: .utf8) {
-                    print("Response data: \(String(dataString.prefix(500)))")
-                }
-                throw decodingError
-            }
-            
         } catch {
             // If API fails, use fallback songs
             print("Failed to fetch songs from API: \(error.localizedDescription)")
@@ -85,6 +73,73 @@ class SongsService: ObservableObject, SongsServiceProtocol {
             
             await MainActor.run {
                 self.songs = sampleSongs
+                self.isLoading = false
+                self.hasMore = false
+                self.nextCursor = nil
+            }
+        }
+    }
+    
+    func fetchSongsPage(userId: String, limit: Int, cursor: String?) async throws -> CursorPageResponse<SongsModel> {
+        var urlComponents = URLComponents(string: "\(baseURL)/api/v1/songs/\(userId)/page")
+        urlComponents?.queryItems = [
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        
+        if let cursor = cursor {
+            urlComponents?.queryItems?.append(URLQueryItem(name: "cursor", value: cursor))
+        }
+        
+        guard let url = urlComponents?.url else {
+            throw URLError(.badURL)
+        }
+        
+        let (data, response) = try await URLSession.shared.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        
+        // Check if response is successful
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        
+        // Decode JSON response
+        let decoder = JSONDecoder()
+        do {
+            let pageResponse = try decoder.decode(CursorPageResponse<SongsModel>.self, from: data)
+            return pageResponse
+        } catch let decodingError as DecodingError {
+            // Print detailed decoding error
+            print("Failed to decode songs page: \(decodingError)")
+            if let dataString = String(data: data, encoding: .utf8) {
+                print("Response data: \(String(dataString.prefix(500)))")
+            }
+            throw decodingError
+        }
+    }
+    
+    func loadMoreSongs(userId: String) async {
+        guard !isLoading && hasMore, let cursor = nextCursor else {
+            return
+        }
+        
+        await MainActor.run {
+            isLoading = true
+        }
+        
+        do {
+            let page = try await fetchSongsPage(userId: userId, limit: defaultLimit, cursor: cursor)
+            await MainActor.run {
+                self.songs.append(contentsOf: page.items)
+                self.nextCursor = page.nextCursor
+                self.hasMore = page.hasNext
+                self.isLoading = false
+            }
+        } catch {
+            print("Failed to load more songs: \(error.localizedDescription)")
+            await MainActor.run {
                 self.isLoading = false
             }
         }

@@ -56,6 +56,18 @@ struct Search: View {
                                 expandSheet = true
                             }
                         }
+                        
+                        // Load more indicator
+                        if searchText.isEmpty && songManager.hasMoreSongs {
+                            ProgressView()
+                                .tint(.white.opacity(0.6))
+                                .padding()
+                                .onAppear {
+                                    Task {
+                                        await songManager.loadMoreSongs()
+                                    }
+                                }
+                        }
                     }
                     .padding(.top, 16)
                 }

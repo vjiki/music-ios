@@ -277,6 +277,18 @@ struct ArtistView: View {
                         songManager.playSong(song, in: artistSongs)
                     }
                 }
+                
+                // Load more indicator
+                if songManager.hasMoreSongs {
+                    ProgressView()
+                        .tint(.white.opacity(0.6))
+                        .padding()
+                        .onAppear {
+                            Task {
+                                await songManager.loadMoreSongs()
+                            }
+                        }
+                }
             }
         }
         .padding(.bottom, 100)

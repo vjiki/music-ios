@@ -452,10 +452,10 @@ private struct HomeTabContent: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     Image(systemName: icon)
-                        .font(.caption)
+                        .font(.system(size: 16, weight: .medium))
                     Spacer()
                     Image(systemName: "play.fill")
-                        .font(.caption)
+                        .font(.system(size: 16, weight: .medium))
                 }
                 .foregroundStyle(.white.opacity(0.7))
                 
@@ -466,9 +466,11 @@ private struct HomeTabContent: View {
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
             }
             .padding(18)
             .frame(maxWidth: .infinity)
+            .frame(height: 120)
             .background(
                 LinearGradient(
                     colors: [Color.white.opacity(0.18), Color.white.opacity(0.08)],
@@ -527,48 +529,52 @@ private struct HomeTabContent: View {
             }
             .padding(.horizontal, 24)
             
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 18) {
-                    ForEach(songManager.librarySongs, id: \.id) { item in
-                        Button {
-                            songManager.playSong(item, in: songManager.librarySongs)
-                        } label: {
-                            HStack(spacing: 14) {
-                            CachedAsyncImage(url: URL(string: item.cover)) { img in
-                                img.resizable()
-                                    .scaledToFill()
-                            } placeholder: {
-                                ProgressView()
-                                        .frame(width: 60, height: 60)
-                            }
-                            .frame(width: 60, height: 60)
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.title)
-                                    .font(.headline)
-                                        .foregroundStyle(.white)
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.85)
-                                    
-                                    Text(item.artist)
-                                    .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.7))
-                                        .lineLimit(1)
-                                }
-                            }
-                            .padding(.vertical, 14)
-                            .padding(.horizontal, 18)
-                            .background(.white.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                            .shadow(color: Color.black.opacity(0.25), radius: 12, x: 0, y: 10)
+            let likedSongs = songManager.likedSongs
+            let songsToShow = !likedSongs.isEmpty 
+                ? Array(likedSongs.shuffled().prefix(6))
+                : Array(songManager.librarySongs.shuffled().prefix(6))
+            
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 18), GridItem(.flexible(), spacing: 18)], spacing: 18) {
+                ForEach(songsToShow, id: \.id) { item in
+                    VStack(alignment: .leading, spacing: 7) {
+                        CachedAsyncImage(url: URL(string: item.cover)) { img in
+                            img.resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            ProgressView()
                         }
-                        .buttonStyle(.plain)
+                        .frame(width: (UIScreen.main.bounds.width - 48 - 18) / 2 * 0.88 - 20)
+                        .frame(height: 104)
+                        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.title)
+                                .font(.headline)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                        
+                            Text(item.artist)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(width: (UIScreen.main.bounds.width - 48 - 18) / 2 * 0.88, alignment: .leading)
+                    .frame(height: 171)
+                    .padding(10)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 7)
+                    .onTapGesture {
+                        songManager.playSong(item, in: songManager.librarySongs)
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 8)
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
         }
     }
     
@@ -592,47 +598,49 @@ private struct HomeTabContent: View {
             }
             .padding(.horizontal, 24)
             
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 18) {
-                    ForEach(songManager.librarySongs, id: \.id) { item in
-                        VStack(alignment: .leading, spacing: 12) {
-                            CachedAsyncImage(url: URL(string: item.cover)) { img in
-                                img.resizable()
-                                    .scaledToFill()
-                            } placeholder: {
-                                ProgressView()
-                            }
-                            .frame(width: 180, height: 180)
-                            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(item.title)
-                                .font(.headline)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.85)
-                            
-                                Text(item.artist)
-                                .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.7))
-                                    .lineLimit(1)
-                            }
+            let randomSongs = Array(songManager.librarySongs.shuffled().prefix(6))
+            
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 18), GridItem(.flexible(), spacing: 18)], spacing: 18) {
+                ForEach(randomSongs, id: \.id) { item in
+                    VStack(alignment: .leading, spacing: 7) {
+                        CachedAsyncImage(url: URL(string: item.cover)) { img in
+                            img.resizable()
+                                .scaledToFill()
+                        } placeholder: {
+                            ProgressView()
                         }
-                        .frame(width: 180, alignment: .leading)
-                        .padding(16)
-                        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-                        )
-                        .shadow(color: Color.black.opacity(0.2), radius: 16, x: 0, y: 12)
-                        .onTapGesture {
-                            songManager.playSong(item, in: songManager.librarySongs)
+                        .frame(width: (UIScreen.main.bounds.width - 48 - 18) / 2 * 0.88 - 20)
+                        .frame(height: 104)
+                        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.title)
+                                .font(.headline)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.85)
+                        
+                            Text(item.artist)
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(1)
                         }
                     }
+                    .frame(width: (UIScreen.main.bounds.width - 48 - 18) / 2 * 0.88, alignment: .leading)
+                    .frame(height: 171)
+                    .padding(10)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 7)
+                    .onTapGesture {
+                        songManager.playSong(item, in: songManager.librarySongs)
+                    }
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 8)
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
         }
     }
     
