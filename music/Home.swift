@@ -204,6 +204,8 @@ private struct HomeTabContent: View {
     @State private var showMessages = false
     @Binding var showSearch: Bool
     @Binding var showPlaylists: Bool
+    @State private var quickPlaySongs: [SongsModel] = []
+    @State private var mixesSongs: [SongsModel] = []
     
     var body: some View {
         ZStack(alignment: .top) {
@@ -241,6 +243,19 @@ private struct HomeTabContent: View {
         .task {
             // Fetch stories from API when view appears
             await fetchStoriesFromAPI()
+            updateQuickPlaySongs()
+            updateMixesSongs()
+        }
+        .onAppear {
+            updateQuickPlaySongs()
+            updateMixesSongs()
+        }
+        .onChange(of: songManager.librarySongs) { _, _ in
+            updateQuickPlaySongs()
+            updateMixesSongs()
+        }
+        .onChange(of: songManager.likedSongs) { _, _ in
+            updateQuickPlaySongs()
         }
         .onChange(of: authService.isAuthenticated) { _, isAuthenticated in
             // Refetch stories when authentication state changes
@@ -249,6 +264,7 @@ private struct HomeTabContent: View {
                     await fetchStoriesFromAPI()
                 }
             }
+            updateQuickPlaySongs()
         }
         .sheet(isPresented: $showStoryCreation) {
             StoryCreationView(storyManager: storyManager, songManager: songManager)
@@ -529,13 +545,8 @@ private struct HomeTabContent: View {
             }
             .padding(.horizontal, 24)
             
-            let likedSongs = songManager.likedSongs
-            let songsToShow = !likedSongs.isEmpty 
-                ? Array(likedSongs.shuffled().prefix(6))
-                : Array(songManager.librarySongs.shuffled().prefix(6))
-            
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 18), GridItem(.flexible(), spacing: 18)], spacing: 18) {
-                ForEach(songsToShow, id: \.id) { item in
+                ForEach(quickPlaySongs, id: \.id) { item in
                     VStack(alignment: .leading, spacing: 7) {
                         CachedAsyncImage(url: URL(string: item.cover)) { img in
                             img.resizable()
@@ -598,10 +609,8 @@ private struct HomeTabContent: View {
             }
             .padding(.horizontal, 24)
             
-            let randomSongs = Array(songManager.librarySongs.shuffled().prefix(6))
-            
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 18), GridItem(.flexible(), spacing: 18)], spacing: 18) {
-                ForEach(randomSongs, id: \.id) { item in
+                ForEach(mixesSongs, id: \.id) { item in
                     VStack(alignment: .leading, spacing: 7) {
                         CachedAsyncImage(url: URL(string: item.cover)) { img in
                             img.resizable()
@@ -674,6 +683,21 @@ private struct HomeTabContent: View {
             followers: followers,
             allSongs: songManager.librarySongs
         )
+    }
+    
+    // Update Quick Play songs
+    private func updateQuickPlaySongs() {
+        let likedSongs = songManager.likedSongs
+        if !likedSongs.isEmpty {
+            quickPlaySongs = Array(likedSongs.shuffled().prefix(6))
+        } else {
+            quickPlaySongs = Array(songManager.librarySongs.shuffled().prefix(6))
+        }
+    }
+    
+    // Update Mixes songs
+    private func updateMixesSongs() {
+        mixesSongs = Array(songManager.librarySongs.shuffled().prefix(6))
     }
 }
 
