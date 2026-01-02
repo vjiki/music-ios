@@ -16,8 +16,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "9197CB712E4F9EEB00304E8C"
-               BuildableName = "music.app"
-               BlueprintName = "music"
+               BuildableName = "birdSwallow.app"
+               BlueprintName = "birdSwallow"
                ReferencedContainer = "container:music.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -36,8 +36,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "9197CB7F2E4F9EF100304E8C"
-               BuildableName = "musicTests.xctest"
-               BlueprintName = "musicTests"
+               BuildableName = "birdSwallowTests.xctest"
+               BlueprintName = "birdSwallowTests"
                ReferencedContainer = "container:music.xcodeproj">
             </BuildableReference>
          </TestableReference>
@@ -47,8 +47,8 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "9197CB892E4F9EF100304E8C"
-               BuildableName = "musicUITests.xctest"
-               BlueprintName = "musicUITests"
+               BuildableName = "birdSwallowUITests.xctest"
+               BlueprintName = "birdSwallowUITests"
                ReferencedContainer = "container:music.xcodeproj">
             </BuildableReference>
          </TestableReference>
@@ -69,8 +69,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "9197CB712E4F9EEB00304E8C"
-            BuildableName = "music.app"
-            BlueprintName = "music"
+            BuildableName = "birdSwallow.app"
+            BlueprintName = "birdSwallow"
             ReferencedContainer = "container:music.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -86,8 +86,8 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "9197CB712E4F9EEB00304E8C"
-            BuildableName = "music.app"
-            BlueprintName = "music"
+            BuildableName = "birdSwallow.app"
+            BlueprintName = "birdSwallow"
             ReferencedContainer = "container:music.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

@@ -1,6 +1,6 @@
 //
-//  musicApp.swift
-//  music
+//  birdSwallowApp.swift
+//  birdSwallow
 //
 //  Created by Nikolai Golubkin on 15. 8. 2025..
 //
@@ -10,7 +10,7 @@ import FirebaseCore
 import GoogleSignIn
 
 @main
-struct musicApp: App {
+struct birdSwallowApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     
     var body: some Scene {
