@@ -18,20 +18,23 @@ struct ArtistView: View {
     @State private var artistSongs: [SongsModel] = []
     @State private var isLoading: Bool = false
     @State private var errorMessage: String? = nil
+    @State private var pulseScale: CGFloat = 1.0
+    @State private var animationId: UUID = UUID()
     
     private var artistCoverUrl: String? {
         band?.coverUrl
+    }
+    
+    private var isPlayingArtistSong: Bool {
+        songManager.isPlaying && isArtistSongPlaying
     }
     
     var body: some View {
         NavigationStack {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
-                    // Artist Info Section
+                    // Artist Info Section (includes custom heart button on cover)
                     artistInfoSection
-                    
-                    // Interaction Buttons
-                    interactionButtons
                     
                     // Recent Release Section
                     recentReleaseSection
@@ -46,6 +49,8 @@ struct ArtistView: View {
                 Task {
                     await fetchBandData()
                 }
+                // Start animation if music is already playing
+                updatePulseAnimation()
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -83,30 +88,32 @@ struct ArtistView: View {
     // MARK: - Artist Info Section
     private var artistInfoSection: some View {
         VStack(spacing: 0) {
-            // Full width artist cover
-            if let coverUrl = artistCoverUrl, let url = URL(string: coverUrl) {
-                CachedAsyncImage(url: url) { image in
-                    image
-                        .resizable()
-                        .scaledToFill()
-                } placeholder: {
+            // Full width artist cover with custom heart button overlay
+            ZStack(alignment: .bottom) {
+                if let coverUrl = artistCoverUrl, let url = URL(string: coverUrl) {
+                    CachedAsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    } placeholder: {
+                        Color.black
+                    }
+                    .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.width)
+                    .clipped()
+                } else {
+                    // Artist photo placeholder
                     ZStack {
                         Color.black
-                        ProgressView()
-                            .tint(.white.opacity(0.6))
+                        Image(systemName: "person.3.fill")
+                            .font(.system(size: 120))
+                            .foregroundStyle(.white.opacity(0.3))
                     }
+                    .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.width)
                 }
-                .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.width)
-                .clipped()
-            } else {
-                // Artist photo placeholder
-                ZStack {
-                    Color.black
-                    Image(systemName: "person.3.fill")
-                        .font(.system(size: 120))
-                        .foregroundStyle(.white.opacity(0.3))
-                }
-                .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.width)
+                
+                // Custom heart button at the bottom of cover
+                customHeartButton
+                    .padding(.bottom, 20)
             }
             
             // Artist name
@@ -118,26 +125,89 @@ struct ArtistView: View {
         }
     }
     
-    // MARK: - Interaction Buttons
-    private var interactionButtons: some View {
-        HStack {
-            Spacer()
-            
-            // Play button
-            Button {
+    // MARK: - Custom Heart Button
+    private var customHeartButton: some View {
+        Button {
+            if isArtistSongPlaying {
+                songManager.togglePlayPause()
+            } else {
                 songManager.playPlaylist(artistSongs)
-            } label: {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(.black)
-                    .frame(width: 70, height: 70)
-                    .background(Color.yellow)
-                    .clipShape(Circle())
+            }
+        } label: {
+            ZStack {
+                // Custom broken heart icon with fragments inside
+                BrokenHeartIcon(
+                    color: isPlayingArtistSong 
+                        ? LinearGradient(
+                            colors: [Color.red, Color.pink],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        : LinearGradient(
+                            colors: [Color.white],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                )
+                .scaleEffect(pulseScale)
+                .id(animationId)
+                
+                // Waveform overlay when playing
+                if isPlayingArtistSong {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .offset(x: 0, y: 15)
+                }
+            }
+            .frame(width: 75, height: 75)
+            .background(Color.white.opacity(0.15))
+            .clipShape(Circle())
+        }
+        .onChange(of: songManager.isPlaying) { _, isPlaying in
+            updatePulseAnimation()
+        }
+        .onChange(of: songManager.song.id) { _, _ in
+            updatePulseAnimation()
+        }
+        .onChange(of: artistSongs.count) { _, _ in
+            updatePulseAnimation()
+        }
+    }
+    
+    // MARK: - Interaction Buttons (removed - button is now on cover)
+    private var interactionButtons: some View {
+        // Empty view - button moved to cover image
+        EmptyView()
+    }
+    
+    // Check if current song is from this artist
+    private var isArtistSongPlaying: Bool {
+        artistSongs.contains { $0.id == songManager.song.id }
+    }
+    
+    // Update pulse animation based on playing state
+    private func updatePulseAnimation() {
+        if isArtistSongPlaying && songManager.isPlaying {
+            // Force animation restart by changing ID
+            animationId = UUID()
+            
+            // Reset scale first
+            pulseScale = 1.0
+            
+            // Then start pulsing animation - twice the icon size (scale 2.0)
+            DispatchQueue.main.async {
+                withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                    self.pulseScale = 2.0
+                }
+            }
+        } else {
+            // Stop animation and reset scale
+            animationId = UUID()
+            withAnimation(.easeInOut(duration: 0.3)) {
+                pulseScale = 1.0
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 30)
     }
     
     // MARK: - Recent Release Section
@@ -295,8 +365,7 @@ private struct SongRow: View {
                         .resizable()
                         .scaledToFill()
                 } placeholder: {
-                    ProgressView()
-                        .tint(.white.opacity(0.6))
+                    Color.clear
                 }
                 .frame(width: 60, height: 60)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -327,11 +396,9 @@ private struct SongRow: View {
                         .foregroundStyle(.red)
                 }
                 
-                // Active indicator
+                // Active indicator with animation
                 if isActive {
-                    Image(systemName: "waveform.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.yellow)
+                    AnimatedWaveformIcon()
                 }
             }
             .padding(.horizontal, 20)
@@ -340,6 +407,194 @@ private struct SongRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Custom Broken Heart Icon
+private struct BrokenHeartIcon: View {
+    let color: LinearGradient
+    @State private var fragmentAnimation: Bool = false
+    
+    var body: some View {
+        ZStack {
+            // Main heart shape (adjusted for smaller button)
+            Image(systemName: "heart.fill")
+                .font(.system(size: 30, weight: .bold))
+                .foregroundStyle(color)
+            
+            // Large center fragment creating the main break
+            Image(systemName: "heart.fill")
+                .font(.system(size: 6, weight: .semibold))
+                .foregroundStyle(color)
+                .offset(x: 0, y: -2.5)
+                .opacity(0.95)
+                .scaleEffect(fragmentAnimation ? 1.05 : 1.0)
+            
+            // Top-left fragments
+            Image(systemName: "heart.fill")
+                .font(.system(size: 4, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: -4, y: -5)
+                .opacity(0.85)
+            
+            Image(systemName: "heart.fill")
+                .font(.system(size: 3, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: -3, y: -3.5)
+                .opacity(0.75)
+            
+            // Top-right fragments
+            Image(systemName: "heart.fill")
+                .font(.system(size: 4.5, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: 4.5, y: -4.5)
+                .opacity(0.85)
+            
+            Image(systemName: "heart.fill")
+                .font(.system(size: 2.5, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: 3.5, y: -3)
+                .opacity(0.7)
+            
+            // Left side fragments
+            Image(systemName: "heart.fill")
+                .font(.system(size: 3.5, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: -5, y: 1)
+                .opacity(0.8)
+            
+            Image(systemName: "heart.fill")
+                .font(.system(size: 2.5, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: -3.5, y: 2.5)
+                .opacity(0.7)
+            
+            // Right side fragments
+            Image(systemName: "heart.fill")
+                .font(.system(size: 3, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: 5, y: 1.5)
+                .opacity(0.8)
+            
+            Image(systemName: "heart.fill")
+                .font(.system(size: 3.5, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: 4, y: 3.5)
+                .opacity(0.75)
+            
+            // Center fragments creating crack effect
+            Image(systemName: "heart.fill")
+                .font(.system(size: 3, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: -1.5, y: 3)
+                .opacity(0.8)
+            
+            Image(systemName: "heart.fill")
+                .font(.system(size: 2.5, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: 2, y: 4)
+                .opacity(0.7)
+            
+            // Bottom fragments
+            Image(systemName: "heart.fill")
+                .font(.system(size: 3, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: -3, y: 6)
+                .opacity(0.75)
+            
+            Image(systemName: "heart.fill")
+                .font(.system(size: 2.5, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: 3.5, y: 7)
+                .opacity(0.65)
+            
+            // Additional small fragments for shattered effect
+            Image(systemName: "heart.fill")
+                .font(.system(size: 2, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: 1, y: 2)
+                .opacity(0.6)
+            
+            Image(systemName: "heart.fill")
+                .font(.system(size: 2, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: -2, y: 4.5)
+                .opacity(0.55)
+            
+            Image(systemName: "heart.fill")
+                .font(.system(size: 1.5, weight: .medium))
+                .foregroundStyle(color)
+                .offset(x: 2.5, y: 0.5)
+                .opacity(0.5)
+        }
+        .onAppear {
+            // Subtle animation for fragments
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                fragmentAnimation = true
+            }
+        }
+    }
+}
+
+// MARK: - Animated Waveform Icon
+private struct AnimatedWaveformIcon: View {
+    @State private var scale: CGFloat = 1.0
+    @State private var ring1Scale: CGFloat = 1.0
+    @State private var ring1Opacity: Double = 0.6
+    @State private var ring2Scale: CGFloat = 1.0
+    @State private var ring2Opacity: Double = 0.4
+    
+    var body: some View {
+        ZStack {
+            // Main waveform circle with pulsing scale
+            Image(systemName: "waveform.circle.fill")
+                .font(.system(size: 24))
+                .foregroundStyle(.red)
+                .scaleEffect(scale)
+            
+            // Pulsing rings effect
+            Circle()
+                .stroke(Color.red.opacity(ring1Opacity), lineWidth: 2)
+                .frame(width: 24, height: 24)
+                .scaleEffect(ring1Scale)
+            
+            Circle()
+                .stroke(Color.red.opacity(ring2Opacity), lineWidth: 1.5)
+                .frame(width: 24, height: 24)
+                .scaleEffect(ring2Scale)
+        }
+        .onAppear {
+            startAnimations()
+        }
+    }
+    
+    private func startAnimations() {
+        // Main icon pulse
+        withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+            scale = 1.2
+        }
+        
+        // First ring animation with reset
+        animateRing(scale: $ring1Scale, opacity: $ring1Opacity, delay: 0.0)
+        
+        // Second ring animation with reset (delayed)
+        animateRing(scale: $ring2Scale, opacity: $ring2Opacity, delay: 0.4)
+    }
+    
+    private func animateRing(scale: Binding<CGFloat>, opacity: Binding<Double>, delay: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            withAnimation(.easeOut(duration: 1.2)) {
+                scale.wrappedValue = 1.8
+                opacity.wrappedValue = 0.0
+            }
+            
+            // Reset and repeat
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                scale.wrappedValue = 1.0
+                opacity.wrappedValue = delay == 0.0 ? 0.6 : 0.4
+                animateRing(scale: scale, opacity: opacity, delay: 0.0)
+            }
+        }
     }
 }
 
