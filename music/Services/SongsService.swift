@@ -27,6 +27,7 @@ protocol SongsServiceProtocol {
     func fetchSongsPage(userId: String, limit: Int, cursor: String?) async throws -> CursorPageResponse<SongsModel>
     func loadMoreSongs(userId: String) async
     func searchSongs(userId: String, query: String, limit: Int, cursor: String?) async throws -> CursorPageResponse<SongsModel>
+    func fetchBand(userId: String, name: String, limit: Int) async throws -> CursorPageResponse<BandResponse>
 }
 
 // MARK: - Implementation (Single Responsibility: Songs Fetching)
@@ -184,6 +185,44 @@ class SongsService: ObservableObject, SongsServiceProtocol {
         } catch let decodingError as DecodingError {
             // Print detailed decoding error
             print("Failed to decode search results: \(decodingError)")
+            if let dataString = String(data: data, encoding: .utf8) {
+                print("Response data: \(String(dataString.prefix(500)))")
+            }
+            throw decodingError
+        }
+    }
+    
+    func fetchBand(userId: String, name: String, limit: Int = 20) async throws -> CursorPageResponse<BandResponse> {
+        var urlComponents = URLComponents(string: "\(baseURL)/api/v1/bands/page")
+        urlComponents?.queryItems = [
+            URLQueryItem(name: "userId", value: userId),
+            URLQueryItem(name: "name", value: name),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        
+        guard let url = urlComponents?.url else {
+            throw URLError(.badURL)
+        }
+        
+        let (data, response) = try await URLSession.shared.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        
+        // Check if response is successful
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        
+        // Decode JSON response
+        let decoder = JSONDecoder()
+        do {
+            let pageResponse = try decoder.decode(CursorPageResponse<BandResponse>.self, from: data)
+            return pageResponse
+        } catch let decodingError as DecodingError {
+            // Print detailed decoding error
+            print("Failed to decode band response: \(decodingError)")
             if let dataString = String(data: data, encoding: .utf8) {
                 print("Response data: \(String(dataString.prefix(500)))")
             }

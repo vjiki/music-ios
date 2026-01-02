@@ -20,6 +20,7 @@ struct MusicView: View {
     var storyImageURL: String? = nil
     
     @EnvironmentObject var songManager: SongManager
+    @EnvironmentObject var authService: AuthService
     
     var body: some View {
         GeometryReader {
@@ -170,6 +171,7 @@ struct MusicView: View {
         .sheet(isPresented: $showArtistView) {
             ArtistView(artistName: songManager.song.artist)
                 .environmentObject(songManager)
+                .environmentObject(authService)
         }
     }
     @ViewBuilder

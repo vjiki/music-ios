@@ -11,13 +11,16 @@ struct ArtistView: View {
     let artistName: String
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var songManager: SongManager
+    @EnvironmentObject var authService: AuthService
     
-    private var artistSongs: [SongsModel] {
-        songManager.librarySongs.filter { $0.artist == artistName }
-    }
+    @StateObject private var songsService = SongsService()
+    @State private var band: BandResponse?
+    @State private var artistSongs: [SongsModel] = []
+    @State private var isLoading: Bool = false
+    @State private var errorMessage: String? = nil
     
-    private var popularTracks: [SongsModel] {
-        artistSongs.prefix(5).map { $0 }
+    private var artistCoverUrl: String? {
+        band?.coverUrl
     }
     
     var body: some View {
@@ -33,15 +36,17 @@ struct ArtistView: View {
                     // Recent Release Section
                     recentReleaseSection
                     
-                    // Popular Tracks Section
-                    popularTracksSection
-                    
                     // All Songs Section
                     allSongsSection
                 }
             }
             .background(Color.black.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                Task {
+                    await fetchBandData()
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -77,95 +82,45 @@ struct ArtistView: View {
     
     // MARK: - Artist Info Section
     private var artistInfoSection: some View {
-        ZStack(alignment: .bottom) {
-            // Background gradient
-            LinearGradient(
-                colors: [Color(red: 0.1, green: 0.1, blue: 0.2), Color.black],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 400)
-            .ignoresSafeArea()
-            
-            // Artist photo placeholder
-            VStack(spacing: 16) {
-                Spacer()
-                
-                // Artist photo
-                Image(systemName: "person.3.fill")
-                    .font(.system(size: 120))
-                    .foregroundStyle(.white.opacity(0.3))
-                    .frame(width: 200, height: 200)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                
-                // Artist name
-                Text(artistName)
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(.white)
-                
-                // Listener count
-                HStack(spacing: 6) {
-                    Image(systemName: "person.2.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.white.opacity(0.7))
-                    
-                    Text("40 278 a month")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.7))
+        VStack(spacing: 0) {
+            // Full width artist cover
+            if let coverUrl = artistCoverUrl, let url = URL(string: coverUrl) {
+                CachedAsyncImage(url: url) { image in
+                    image
+                        .resizable()
+                        .scaledToFill()
+                } placeholder: {
+                    ZStack {
+                        Color.black
+                        ProgressView()
+                            .tint(.white.opacity(0.6))
+                    }
                 }
-                
-                Spacer()
+                .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.width)
+                .clipped()
+            } else {
+                // Artist photo placeholder
+                ZStack {
+                    Color.black
+                    Image(systemName: "person.3.fill")
+                        .font(.system(size: 120))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+                .frame(width: UIScreen.main.bounds.width, height: UIScreen.main.bounds.width)
             }
-            .padding(.bottom, 100)
+            
+            // Artist name
+            Text(artistName)
+                .font(.system(size: 32, weight: .bold))
+                .foregroundStyle(.white)
+                .padding(.top, 20)
+                .padding(.bottom, 20)
         }
     }
     
     // MARK: - Interaction Buttons
     private var interactionButtons: some View {
-        HStack(spacing: 20) {
-            // Like button
-            VStack(spacing: 8) {
-                Button {
-                    // Like action
-                } label: {
-                    Image(systemName: "heart")
-                        .font(.system(size: 24, weight: .medium))
-                        .foregroundStyle(.white)
-                        .frame(width: 60, height: 60)
-                        .background(Color.white.opacity(0.1))
-                        .clipShape(Circle())
-                }
-                
-                Text("38 490")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.7))
-            }
-            
-            // Donate button
-            Button {
-                // Donate action
-            } label: {
-                Text("P")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 60, height: 60)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(Circle())
-            }
-            
-            // Trailer button
-            Button {
-                // Trailer action
-            } label: {
-                Image(systemName: "waveform")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: 60, height: 60)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(Circle())
-            }
-            
+        HStack {
             Spacer()
             
             // Play button
@@ -237,29 +192,6 @@ struct ArtistView: View {
         .padding(.bottom, 30)
     }
     
-    // MARK: - Popular Tracks Section
-    private var popularTracksSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Popular tracks")
-                .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 20)
-            
-            LazyVStack(spacing: 0) {
-                ForEach(Array(popularTracks.enumerated()), id: \.element.id) { index, song in
-                    PopularTrackRow(
-                        index: index + 1,
-                        song: song,
-                        isActive: song.id == songManager.song.id
-                    ) {
-                        songManager.playSong(song, in: artistSongs)
-                    }
-                }
-            }
-        }
-        .padding(.bottom, 30)
-    }
-    
     // MARK: - All Songs Section
     private var allSongsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -268,88 +200,83 @@ struct ArtistView: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 20)
             
-            LazyVStack(spacing: 0) {
-                ForEach(artistSongs) { song in
-                    SongRow(
-                        song: song,
-                        isActive: song.id == songManager.song.id
-                    ) {
-                        songManager.playSong(song, in: artistSongs)
-                    }
+            if isLoading {
+                ProgressView()
+                    .tint(.white.opacity(0.6))
+                    .padding()
+            } else if let error = errorMessage {
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.white.opacity(0.3))
+                    Text(error)
+                        .font(.headline)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
                 }
-                
-                // Load more indicator
-                if songManager.hasMoreSongs {
-                    ProgressView()
-                        .tint(.white.opacity(0.6))
-                        .padding()
-                        .onAppear {
-                            Task {
-                                await songManager.loadMoreSongs()
-                            }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 50)
+            } else if artistSongs.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.white.opacity(0.3))
+                    Text("No songs found")
+                        .font(.headline)
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 50)
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(artistSongs) { song in
+                        SongRow(
+                            song: song,
+                            isActive: song.id == songManager.song.id
+                        ) {
+                            songManager.playSong(song, in: artistSongs)
                         }
+                    }
                 }
             }
         }
         .padding(.bottom, 100)
     }
-}
-
-// MARK: - Popular Track Row
-private struct PopularTrackRow: View {
-    let index: Int
-    let song: SongsModel
-    let isActive: Bool
-    let onTap: () -> Void
     
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 16) {
-                // Track number
-                Text("\(index)")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(isActive ? .yellow : .white.opacity(0.6))
-                    .frame(width: 30, alignment: .leading)
-                
-                // Track info
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(song.title)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                    
-                    Text(song.artist)
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .lineLimit(1)
-                }
-                
-                Spacer()
-                
-                // Like/dislike indicator
-                if song.isLiked {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(.pink)
-                } else if song.isDisliked {
-                    Image(systemName: "heart.slash.fill")
-                        .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(.red)
-                }
-                
-                // Active indicator
-                if isActive {
-                    Image(systemName: "waveform.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.yellow)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .background(isActive ? Color.white.opacity(0.1) : Color.clear)
-            .contentShape(Rectangle())
+    // MARK: - Fetch Band Data
+    private func fetchBandData() async {
+        // Ensure we're on the main actor to safely access environment objects
+        await MainActor.run {
+            isLoading = true
+            errorMessage = nil
         }
-        .buttonStyle(.plain)
+        
+        // Get userId on main actor to ensure environment object is available
+        let userId = await MainActor.run {
+            authService.currentUserId
+        }
+        
+        do {
+            let response = try await songsService.fetchBand(userId: userId, name: artistName, limit: 20)
+            
+            await MainActor.run {
+                if let firstBand = response.items.first {
+                    band = firstBand
+                    artistSongs = firstBand.songs
+                } else {
+                    errorMessage = "Artist not found"
+                    artistSongs = []
+                }
+                isLoading = false
+            }
+        } catch {
+            await MainActor.run {
+                isLoading = false
+                errorMessage = "Failed to load artist data. Please try again."
+                artistSongs = []
+                print("Failed to fetch band: \(error.localizedDescription)")
+            }
+        }
     }
 }
 
@@ -420,5 +347,6 @@ private struct SongRow: View {
     ArtistView(artistName: "Scotch")
         .preferredColorScheme(.dark)
         .environmentObject(SongManager())
+        .environmentObject(AuthService())
 }
 
