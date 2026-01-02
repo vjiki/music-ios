@@ -26,6 +26,7 @@ protocol SongsServiceProtocol {
     func fetchSongs(userId: String) async
     func fetchSongsPage(userId: String, limit: Int, cursor: String?) async throws -> CursorPageResponse<SongsModel>
     func loadMoreSongs(userId: String) async
+    func searchSongs(userId: String, query: String, limit: Int, cursor: String?) async throws -> CursorPageResponse<SongsModel>
 }
 
 // MARK: - Implementation (Single Responsibility: Songs Fetching)
@@ -142,6 +143,51 @@ class SongsService: ObservableObject, SongsServiceProtocol {
             await MainActor.run {
                 self.isLoading = false
             }
+        }
+    }
+    
+    func searchSongs(userId: String, query: String, limit: Int = 20, cursor: String? = nil) async throws -> CursorPageResponse<SongsModel> {
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw URLError(.badURL)
+        }
+        
+        var urlComponents = URLComponents(string: "\(baseURL)/api/v1/search/songs/\(userId)")
+        urlComponents?.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        
+        if let cursor = cursor {
+            urlComponents?.queryItems?.append(URLQueryItem(name: "cursor", value: cursor))
+        }
+        
+        guard let url = urlComponents?.url else {
+            throw URLError(.badURL)
+        }
+        
+        let (data, response) = try await URLSession.shared.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        
+        // Check if response is successful
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        
+        // Decode JSON response
+        let decoder = JSONDecoder()
+        do {
+            let pageResponse = try decoder.decode(CursorPageResponse<SongsModel>.self, from: data)
+            return pageResponse
+        } catch let decodingError as DecodingError {
+            // Print detailed decoding error
+            print("Failed to decode search results: \(decodingError)")
+            if let dataString = String(data: data, encoding: .utf8) {
+                print("Response data: \(String(dataString.prefix(500)))")
+            }
+            throw decodingError
         }
     }
 }
